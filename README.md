@@ -12,9 +12,28 @@
 - [CloudWatch](#cloudwatch)
 - [Cloudfront](#cloudfront)
 - [VPC](#vpc)
+- [Artifact](#artifact)
+- [OpsWorks](#opsworks)
+- [Trusted Advisor](#trusted-advisor)
+- [Inspector](#inspector)
+- [GuardDuty](#guardduty)
 
 
 ## EC2
+
+- `InstanceLimitExceeded` error when you try to launch a new instance or restart a stopped instance, you have reached the limit on the number of instances that you can launch in a **Region**
+- `InsufficientInstanceCapacity` error when you try to launch a new instance or restart a stopped instance, AWS does not currently have enough available On-Demand capacity to fulfill your request.
+
+**Burstable instances**
+Provide a baseline level of CPU utilization with the ability to burst CPU utilization above the baseline level. The baseline utilization and ability to burst are governed by CPU credits.
+
+The CPU credits used depends on CPU utilization. The following scenarios all use one CPU credit:
+
+- One vCPU at 100% utilization for one minute
+- One vCPU at 50% utilization for two minutes
+- Two vCPUs at 25% utilization for two minutes
+
+To resolve CPU throttling, you can either **enable T2/T3 Unlimited**, or **change the instance type with a higher CPU credit limit**. **T2 Unlimited** instances can sustain high CPU performance for as long as a workload needs it.
 
 **termination protection**:
 - You can't enable **termination protection** for Spot Instances. A Spot Instance is terminated when the Spot price exceeds the amount you're willing to pay for Spot Instances
@@ -35,6 +54,8 @@ The `DisableApiTermination` attribute controls whether the instance can be termi
 - It isn't possible to restore or recover a deleted or deregistered AMI. However, you can create a new, identical AMI using one of the following: 
   - EBS snapshots that were created as backups.
   - EC2 instances that were launched from the deleted AMI
+
+!["AMI-sharing"](ami-sharing.jpg)
 
 **Resizing**
 - If your instance has a public IPv4 address, AWS releases the address and gives it a new public IPv4 address. The instance retains its private IPv4 addresses, any Elastic IP addresses, and any IPv6 addresses.
@@ -60,9 +81,23 @@ Consider using enhanced networking for the following scenarios:
 - `HTTP 503: Service unavailable will be received as response` is returned if the target groups for the load balancer have no registered targets.
 - `HTTP 403: Forbidden will be returned` is returned if you configured an AWS WAF web access control list (web ACL) to monitor requests to your Application Load Balancer and it blocked the request.
 
+Open a support request with AWS to **pre-warm the load balancer**. AWS will need to know the start and end dates of your tests or expected flash traffic, the expected request rate per second, and the total size of the typical request/response that you will be testing
+
+`ActiveConnectionCount` metric to auto scale. This metric represents the total number of concurrent TCP connections active from clients to the load balancer and from the load balancer to targets.
+
 ## ASG
 `Client.InternalError: Client error on launch` is thrown when an Auto Scaling group attempts to launch an instance that has an encrypted EBS volume, but the service-linked role does not have access to the customer-managed CMK used to encrypt it.
 !["ASG"](asg.jpg)
+
+!["ASG-Suspend"](asg-suspend.jpg)
+- If the `Terminate` process is suspended, your Auto Scaling group does not scale in for alarms or scheduled actions that occur.
+- **ASG can grow up to 10 percent larger than its maximum size temporarily during rebalancing activities.**
+
+`SpilloverCount` represents the total number of requests that were rejected because the **surge queue is full**. An increased maximum statistic for `SurgeQueueLength` indicates that backend systems aren't able to process incoming requests as fast as the requests are received. To solve this use-case, you need to configure the Auto Scaling groups to scale your instances based on the `SurgeQueueLength` metric.
+
+Amazon EC2 Auto Scaling uses the value of the `HealthCheckGracePeriod` for the Auto Scaling group to determine how long to wait before checking the health status of the instance. By default, the health check grace period is 300 seconds when you create an Auto Scaling group from the AWS Management Console. Its default value is 0 seconds when you create an Auto Scaling group using the AWS CLI or an SDK.
+
+ASG configuration can either consider `EC2 health status checks` or `ELB health status checks`, **not both**.
 
 ## EBS
 
@@ -80,11 +115,13 @@ File, Volume and Tape Gateway data is stored in Amazon S3 buckets by AWS Storage
 ## SSM
 - Use the `AWSSupport-ExecuteEC2Rescue` document to recover impaired instances
 - `AWS-UpdateCloudFormationStackWithApproval` document is used to update resources that were deployed by using CloudFormation template.
-- Use the A`WS-UpdateWindowsAmi` document to recover impaired instances - You use the `AWS-UpdateLinuxAmi` and `AWS-UpdateWindowsAmi` documents to create golden AMIs from a source AMI.
+- Use the `AWS-UpdateWindowsAmi` document to recover impaired instances - You use the `AWS-UpdateLinuxAmi` and `AWS-UpdateWindowsAmi` documents to create golden AMIs from a source AMI.
 
 **Systems Manager Automation** simplifies common maintenance and deployment tasks of EC2 instances and other AWS resources. Automation enables you to do the following: Build Automation workflows to configure and manage instances and AWS resources, Create custom workflows or use pre-defined workflows maintained by AWS, Receive notifications about Automation tasks and workflows by using Amazon EventBridge, Monitor Automation progress and execution details by using the Amazon EC2 or the AWS Systems Manager console
 
 **AWS Systems Manager Patch Manager** automates the process of patching managed instances with both security-related and other types of updates. You can use Patch Manager to apply patches for both operating systems and applications. You can use Patch Manager to install Service Packs on Windows instances and perform minor version upgrades on Linux instances. You can patch fleets of EC2 instances or your on-premises servers and virtual machines (VMs) by operating system type.
+
+**AWS Systems Manager Inventory** provides visibility into your Amazon EC2 and on-premises computing environment. You can use Inventory to collect metadata from your managed instances. You can store this metadata in a central Amazon Simple Storage Service (Amazon S3) bucket, and then use built-in tools to query the data and quickly determine which instances are running the software and configurations required by your software policy, and which instances need to be updated.
 
 ## S3
 **MFA delete** requires additional authentication for either of the following operations:
@@ -151,10 +188,12 @@ You can use the `OnFailure` property of the CloudFormation CreateStack call for 
 !["Service Advisor"](service-advisor.jpg)
 
 ## Beanstalk
-- ASG 2 default `cloudwatch alarms`: Average outbound network traffic (`NetworkOut`) from each instance is higher than 6 MB or lower than 2 MB over a period of five minutes.
+ASG 2 default `cloudwatch alarms`: Average outbound network traffic (`NetworkOut`) from each instance is higher than 6 MB or lower than 2 MB over a period of five minutes.
 
 ## CloudWatch
-You can retrieve custom metrics from your applications or services using the `StatsD` and `collectd` protocols. `StatsD` is supported on both Linux servers and servers running Windows Server. `collectd` is supported only on Linux servers.
+You can retrieve custom metrics from your applications or services using the `StatsD` and `collectd` protocols.
+- `StatsD` is supported on both **Linux and Windows Server**.
+- `collectd` is supported only on **Linux**.
 
 **Canaries**
 
@@ -172,6 +211,13 @@ You can run a canary once or on a regular schedule. Scheduled canaries can run 2
 - `StatusCheckFailed_System` - Reports whether the instance has passed the system status check in the last minute.
 **CloudWatch Agent**: Any configuration files appended to the configuration **must have different file names** from each other and from the initial configuration file. If you use `append-config` with a configuration file with the same file name as a configuration file that the agent is already using, the append command overwrites the information from the first configuration file instead of appending to it. This is true even if the two configuration files with the same file name are on different file paths.
 
+**CW alarms** action can only have the following targets:
+- EC2 action
+- ASG action
+- SNS
+- Creating a Systems Manager OpsItem
+
+Using `Amazon CloudWatch alarm actions`, you can create alarms that automatically `stop`, `terminate`, `reboot`, or `recover` your EC2 instances. You can use the stop or terminate actions to help you save money when you no longer need an instance to be running. You can use the reboot and recover actions to automatically reboot those instances or recover them onto new hardware if a system **impairment** occurs
 ## Cloudfront
 If your Amazon **S3 bucket is configured as a website endpoint**, you can't configure CloudFront to use HTTPS to communicate with your origin because Amazon S3 doesn't support HTTPS connections in that configuration.
 
@@ -182,3 +228,24 @@ Troubleshooting flow logs:
 - The trust relationship does not specify the flow logs service as the principal
 
 After you've created a flow log, you cannot change its configuration or the flow log record format
+!["VPN"](vpn.jpg)
+## Artifact
+AWS Artifact is a self-service audit artifact retrieval portal that provides our customers with **on-demand access to AWS’ compliance documentation and AWS agreements**.
+
+## OpsWorks
+AWS OpsWorks is a configuration management service that provides managed instances of **Chef and Puppet**.
+
+## Trusted Advisor
+AWS Trusted Advisor is an online tool that provides you real-time guidance to help you provision your resources following AWS best practices.
+
+## Inspector
+Amazon Inspector is an automated security assessment service that helps you test the network accessibility of your Amazon EC2 instances and the security state of your applications running on the instances.
+
+An Amazon Inspector assessment report can be generated for an assessment run once it has been successfully completed. An assessment report is a document that details what is tested in the assessment run, and the results of the assessment. The results of your assessment are formatted into a standard report, which can be generated to share results within your team for remediation actions, to enrich compliance audit data, or to store for future reference.
+
+You can select from two types of report for your assessment, a **findings report** or a **full report**
+- **findings report** contains an executive summary of the assessment, the instances targeted, the rules packages tested, the rules that generated findings, and detailed information about each of these rules along with the list of instances that failed the check
+- **full report** contains all the information in the findings report and additionally provides the list of rules that were checked and passed on all instances in the assessment target
+
+## GuardDuty
+!["GuardDuty"](guardduty.png)
