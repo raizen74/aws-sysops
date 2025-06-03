@@ -5,6 +5,7 @@
 - [EBS](#ebs)
 - [Storage Gateway](#storage-gateway)
 - [SSM](#ssm)
+- [RDS](#rds)
 - [S3](#s3)
 - [Cloudformation](#cloudformation)
 - [Service Advisor](#service-advisor)
@@ -20,7 +21,7 @@
 
 
 ## EC2
-
+!["EC2 options"](ec2-options.jpg)
 - `InstanceLimitExceeded` error when you try to launch a new instance or restart a stopped instance, you have reached the limit on the number of instances that you can launch in a **Region**
 - `InsufficientInstanceCapacity` error when you try to launch a new instance or restart a stopped instance, AWS does not currently have enough available On-Demand capacity to fulfill your request.
 
@@ -36,7 +37,7 @@ The CPU credits used depends on CPU utilization. The following scenarios all use
 To resolve CPU throttling, you can either **enable T2/T3 Unlimited**, or **change the instance type with a higher CPU credit limit**. **T2 Unlimited** instances can sustain high CPU performance for as long as a workload needs it.
 
 **termination protection**:
-- You can't enable **termination protection** for Spot Instances. A Spot Instance is terminated when the Spot price exceeds the amount you're willing to pay for Spot Instances
+- **You can't enable termination protection for Spot Instances**. A Spot Instance is terminated when the Spot price exceeds the amount you're willing to pay for Spot Instances
 - To prevent instances that are part of an ASG from terminating on scale in, use **instance protection**.
 - To prevent Amazon EC2 Auto Scaling from terminating unhealthy instances, suspend the `ReplaceUnhealthy` process.
 - To specify which instances Amazon EC2 Auto Scaling should terminate first, choose a termination policy.
@@ -77,6 +78,14 @@ Consider using enhanced networking for the following scenarios:
 - Capacity Reservations can be used with neither placement groups nor Dedicated Hosts.
 - You can share Capacity Reservations with other AWS accounts.
 
+**Spot Instances**
+You can specify that Amazon EC2 should do one of the following when it interrupts a Spot Instance:
+- Stop the Spot Instance
+- Hibernate the Spot Instance
+- Terminate the Spot Instance
+- 
+The **default is to terminate Spot Instances** when they are interrupted.
+
 ## ALB
 - `HTTP 503: Service unavailable will be received as response` is returned if the target groups for the load balancer have no registered targets.
 - `HTTP 403: Forbidden will be returned` is returned if you configured an AWS WAF web access control list (web ACL) to monitor requests to your Application Load Balancer and it blocked the request.
@@ -103,6 +112,8 @@ ASG configuration can either consider `EC2 health status checks` or `ELB health 
 
 An EBS (**io1 or io2**) volume, when configured with the new **Multi-Attach** option, can be attached to a maximum of 16 EC2 instances in a single Availability Zone. Additionally, each Nitro-based EC2 instance can support the attachment of multiple Multi-Attach enabled EBS volumes
 
+![io1](io1.jpg)
+
 **RAID**
 ![raid](raid.jpg)
 ## Storage Gateway
@@ -113,17 +124,34 @@ AWS Storage Gateway uses SSL/TLS (Secure Socket Layers/Transport Layer Security)
 File, Volume and Tape Gateway data is stored in Amazon S3 buckets by AWS Storage Gateway. Tape Gateway supports backing data to Amazon S3 Glacier apart from the standard storage.
 
 ## SSM
+- Run the `AWSSupport-TroubleshootS3PublicRead` automation document on AWS Systems Manager to help you diagnose issues with accessing objects from a public S3 bucket. Analyzes 403 errors from publicly readable objects. 
 - Use the `AWSSupport-ExecuteEC2Rescue` document to recover impaired instances
 - `AWS-UpdateCloudFormationStackWithApproval` document is used to update resources that were deployed by using CloudFormation template.
 - Use the `AWS-UpdateWindowsAmi` document to recover impaired instances - You use the `AWS-UpdateLinuxAmi` and `AWS-UpdateWindowsAmi` documents to create golden AMIs from a source AMI.
-
 **Systems Manager Automation** simplifies common maintenance and deployment tasks of EC2 instances and other AWS resources. Automation enables you to do the following: Build Automation workflows to configure and manage instances and AWS resources, Create custom workflows or use pre-defined workflows maintained by AWS, Receive notifications about Automation tasks and workflows by using Amazon EventBridge, Monitor Automation progress and execution details by using the Amazon EC2 or the AWS Systems Manager console
 
 **AWS Systems Manager Patch Manager** automates the process of patching managed instances with both security-related and other types of updates. You can use Patch Manager to apply patches for both operating systems and applications. You can use Patch Manager to install Service Packs on Windows instances and perform minor version upgrades on Linux instances. You can patch fleets of EC2 instances or your on-premises servers and virtual machines (VMs) by operating system type.
 
 **AWS Systems Manager Inventory** provides visibility into your Amazon EC2 and on-premises computing environment. You can use Inventory to collect metadata from your managed instances. You can store this metadata in a central Amazon Simple Storage Service (Amazon S3) bucket, and then use built-in tools to query the data and quickly determine which instances are running the software and configurations required by your software policy, and which instances need to be updated.
 
+## RDS
+**Aurora logs**
+
+By design, Aurora Serverless connects to a proxy fleet of DB instances that scales automatically. Because there isn't a direct DB instance to access and host the log files, you can't view the logs directly from the Amazon Relational Database Service (Amazon RDS) console. However, you can view and download logs that are sent to the CloudWatch console.
+
+To enable logs, first modify the cluster parameter groups for an Aurora serverless cluster. For MySQL-compatible DB clusters, you can enable the slow query log, general log, or audit logs.
+![aurora-logs](aurora-logs.jpg)
+
+**Enhanced Monitoring** for RDS provides the following OS metrics: 1.Free Memory 2.Active Memory 3.Swap Free 4.Processes Running 5.File System Used
+
+**Performance Insights** collects metric data from the database engine to monitor the actual load on a database. 
+
 ## S3
+
+**S3 Replication Time Control (S3 RTC)** helps you meet compliance or business requirements for data replication and provides visibility into Amazon S3 replication times. S3 RTC replicates most objects that you upload to Amazon S3 in seconds, and 99.99 percent of those objects within 15 minutes.
+
+S3 RTC by default includes S3 replication metrics and S3 event notifications
+
 **MFA delete** requires additional authentication for either of the following operations:
 - Change the versioning state of your bucket
 - Permanently delete an object version
@@ -149,6 +177,9 @@ When you use bucket default settings, you don't specify a `Retain Until Date`. I
 
 - `Parameter constraints` describe allowed input values so that AWS CloudFormation catches any invalid values before creating a stack. You can set constraints such as a minimum length, maximum length, and allowed patterns.
 - `!GetAtt` - The Fn::GetAtt intrinsic function returns the value of an attribute from a resource in the template. This example snippet returns a string containing the DNS name of the load balancer with the logical name myELB - YML : `!GetAtt` myELB.DNSName JSON : "Fn::GetAtt" : [ "myELB" , "DNSName" ]
+- `!ImportValue` The intrinsic function Fn::ImportValue returns the value of an output exported by another stack. You typically use this function to create cross-stack references.
+- `!Ref` - Returns the value of the specified parameter or resource.
+- `!Sub` - Substitutes variables in an input string with values that you specify.
 
 The `cfn-init` helper script reads template metadata from the AWS::CloudFormation::Init key and acts accordingly to:
 
@@ -184,6 +215,9 @@ When you create a stack, all update actions are allowed on all resources. By def
 
 You can use the `OnFailure` property of the CloudFormation CreateStack call for this use-case. The `OnFailure` property determines what action will be taken if stack creation fails. This must be one of `DO_NOTHING`, `ROLLBACK`, or `DELETE`.
 
+**Cross-stack references**
+To create a cross-stack reference, use the `Export output` field to flag the value of a resource output for export. Then, use the `Fn::ImportValue` intrinsic function to import the value.
+
 ## Service Advisor
 !["Service Advisor"](service-advisor.jpg)
 
@@ -194,6 +228,9 @@ ASG 2 default `cloudwatch alarms`: Average outbound network traffic (`NetworkOut
 You can retrieve custom metrics from your applications or services using the `StatsD` and `collectd` protocols.
 - `StatsD` is supported on both **Linux and Windows Server**.
 - `collectd` is supported only on **Linux**.
+
+**Detailed Monitoring**
+After you enable detailed monitoring, the Amazon EC2 console displays monitoring graphs with a 1-minute period for the instance. In Basic monitoring, data is available automatically in 5-minute periods at no charge.
 
 **Canaries**
 
@@ -209,6 +246,9 @@ You can run a canary once or on a regular schedule. Scheduled canaries can run 2
 - `StatusCheckFailed` - Reports whether the instance has passed both the instance status check and the system status check in the last minute.
 - `StatusCheckFailed_Instance` - Reports whether the instance has passed the instance status check in the last minute.
 - `StatusCheckFailed_System` - Reports whether the instance has passed the system status check in the last minute.
+  
+The only dimension that **Amazon SQS** sends to CloudWatch is `QueueName`. This means that all available statistics are filtered by `QueueName`.
+
 **CloudWatch Agent**: Any configuration files appended to the configuration **must have different file names** from each other and from the initial configuration file. If you use `append-config` with a configuration file with the same file name as a configuration file that the agent is already using, the append command overwrites the information from the first configuration file instead of appending to it. This is true even if the two configuration files with the same file name are on different file paths.
 
 **CW alarms** action can only have the following targets:
@@ -222,6 +262,8 @@ Using `Amazon CloudWatch alarm actions`, you can create alarms that automaticall
 If your Amazon **S3 bucket is configured as a website endpoint**, you can't configure CloudFront to use HTTPS to communicate with your origin because Amazon S3 doesn't support HTTPS connections in that configuration.
 
 ## VPC
+**CNAME records** can be used to map one domain name to another. Although you should keep in mind that the DNS protocol does not allow you to create a CNAME record for the top node of a DNS namespace, also known as the zone apex. For example, if you register the DNS name example.com, the zone apex is example.com. You cannot create a CNAME record for example.com, but you can create CNAME records for www.example.com, newproduct.example.com, and so on.
+
 Troubleshooting flow logs:
 - The IAM role for your flow log does not have sufficient permissions to publish flow log records to the CloudWatch log group
 - The IAM role does not have a trust relationship with the flow logs service
