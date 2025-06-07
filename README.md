@@ -25,6 +25,9 @@
 - [GuardDuty](#guardduty)
 - [ACM](#acm)
 - [Service Catalog](#service-catalog)
+- [SSO](#sso)
+- [KMS](#kms)
+- [Organizations](#organizations)
 
 
 ## EC2
@@ -196,8 +199,21 @@ To enable logs, first modify the cluster parameter groups for an Aurora serverle
 - When choosing the replica to promote to primary, ElastiCache for Redis chooses the replica with the least replication lag.
 - When you manually promote read replicas to primary on Redis (cluster mode disabled), you can do so only when Multi-AZ and automatic failover are disabled
 - A customer-initiated reboot of a primary doesn't trigger automatic failover. Other reboots and failures do trigger automatic failover
+
+**Memcached**
+With Amazon ElastiCache Memcached engine you cannot modify the node type. The way to scale up is to create a new cluster and specify the new node type. 
+
 ## S3
-You can retrieve 10 GB of your **Amazon S3 Glacier** data per month for free. 
+- A `503 service unavailable error` is most likely caused by too many requests coming in within a very short period of time
+- You can retrieve 10 GB of your **Amazon S3 Glacier** data per month for free.
+- You cannot enable **default encryption** on objects, you enable it at the **bucket level**.
+
+**Object Lock Governance mode**
+When the S3 Object Lock is set in governance mode, it prevents users from overwriting or deleting any version of the object unless they have special permissions. One of these permissions is the '`s3:BypassGovernanceRetention`' IAM permission, which allows a user to bypass the governance mode restrictions. Therefore, the SysOps administrator would need this permission to delete the objects.
+
+To bypass governance mode, you must explicitly indicate in your request that you want to bypass this mode. To do this, include the `x-amz-bypass-governance-retention:true` **header** with your request, or use the equivalent parameter with requests made through the AWS CLI, or AWS SDKs.
+
+Together, these two steps allow the SysOps administrator to delete the unnecessary data from the S3 bucket.
 
 **S3 Replication Time Control (S3 RTC)** helps you meet compliance or business requirements for data replication and provides visibility into Amazon S3 replication times. S3 RTC replicates most objects that you upload to Amazon S3 in seconds, and 99.99 percent of those objects within 15 minutes.
 
@@ -291,6 +307,10 @@ To create a cross-stack reference, use the `Export output` field to flag the val
 
 Stack outputs are displayed on screen when stack is runned from AWS CLI
 
+The `ROLLBACK_COMPLETE` status indicates the successful removal of one or more stacks after a failed stack creation or after an explicitly canceled stack creation. Any resources that were created during the create stack action are deleted.
+
+This status exists only after a failed stack creation. It signifies that all operations from the partially created stack have been appropriately cleaned up. When in this state, only a delete operation can be performed.
+
 **STACK SETS**
 Stack sets can be created using either **self-managed permissions** or **service-managed permissions**. With service-managed permissions, you can deploy stack instances to accounts managed by AWS Organizations. Using this permissions model, you don't have to create the necessary IAM roles; StackSets creates the IAM roles on your behalf.
 - You must set up a trust relationship between the administrator (An administrator account is the AWS account in which you create stack sets) and target accounts before creating stacks in target accounts
@@ -348,6 +368,13 @@ Troubleshooting flow logs:
 
 After you've created a flow log, you cannot change its configuration or the flow log record format
 !["VPN"](vpn.jpg)
+
+- 2 123456789011 eni-5432a9dc987654321 10.0.1.23 172.32.17.148 60004 8081 1 4 350 1432918128 1432918243 ACCEPT OK
+- 2 123456789011 eni-5432a9dc987654321 172.32.17.148 10.0.1.23 8081 60004 1 4 350 1432918195 1432918243 REJECT OK
+
+The second entry in the log file shows that the traffic was rejected. The flow logs indicate that the traffic was blocked when it tried to connect from the EC2 instance (172.32.17.148) on port 8081 to the on-premises system (10.0.1.23) on ephemeral port 60004.
+
+The rejection of traffic suggests that there is a network-level block preventing the outbound traffic from the EC2 instance. Since the flow logs indicate that the rejection occurred due to the ephemeral port range (60004) being blocked, it implies that the network ACL associated with the subnet where the EC2 instances reside is the cause of the issue.
 ## Artifact
 AWS Artifact is a self-service audit artifact retrieval portal that provides our customers with **on-demand access to AWS’ compliance documentation and AWS agreements**.
 
@@ -356,6 +383,8 @@ AWS OpsWorks is a configuration management service that provides managed instanc
 
 ## Trusted Advisor
 AWS Trusted Advisor is an online tool that provides you real-time guidance to help you provision your resources following AWS best practices.
+
+You can use **AWS Trusted Advisor’s Service Limit Dashboard** to determine whether the service limits for EC2 instances have been reached
 
 ## Inspector
 Amazon Inspector is an automated security assessment service that helps you test the network accessibility of your Amazon EC2 instances and the security state of your applications running on the instances.
@@ -378,3 +407,16 @@ You can select from two types of report for your assessment, a **findings report
 
 ## Service Catalog
 You can share portfolios in several ways, including **account-to-account sharing**, **organizational sharing**, and deploying catalogs using stack sets (creates independent copies).
+
+## SSO
+**Permission sets** define the level of access that users and groups have to an AWS account. Permission sets are stored in AWS SSO and provisioned to the AWS account as IAM roles.
+
+## KMS
+When you import key material into a CMK, the CMK is permanently associated with that key material. You can reimport the same key material, but you cannot import different key material into that CMK. Also, you cannot enable automatic key rotation for a CMK with imported key material. However, you can manually rotate a CMK with imported key material.
+
+Therefore, the best solution is to create a new CMK and import new key material into it. The alias in the application code can then be updated to point to the new CMK.
+
+## Organizations
+User-defined tags are tags that you define, create, and apply to resources. After you have created and applied the user-defined tags, you can activate by using the Billing and Cost Management console for cost allocation tracking. **Cost Allocation Tags** appear on the console after you've enabled Cost Explorer, Budgets, AWS Cost and Usage reports, or legacy reports.
+
+When using AWS Organizations, you must use the **Billing and Cost Management console in the payer account** to mark the tags as cost allocation tags. You can use the **Cost Allocation Tags manager** to do this.
