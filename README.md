@@ -28,9 +28,12 @@
 - [SSO](#sso)
 - [KMS](#kms)
 - [Organizations](#organizations)
+- [Route 53](#route-53)
 
 
 ## EC2
+To capture EC2 state changes (e.g. Running->Stopped) use and `EventBridge rule`
+
 !["EC2 options"](ec2-options.jpg)
 - `InstanceLimitExceeded` error when you try to launch a new instance or restart a stopped instance, you have reached the limit on the number of instances that you can launch in a **Region**
 - `InsufficientInstanceCapacity` error when you try to launch a new instance or restart a stopped instance, AWS does not currently have enough available On-Demand capacity to fulfill your request.
@@ -57,10 +60,10 @@ The `DisableApiTermination` attribute controls whether the instance can be termi
 `Status checks ` are performed **every minute** at no charge, returning a pass or a fail status. If all checks pass, the overall status of the instance is OK. If one or more checks fail, the overall status is impaired. `Status checks` are built into Amazon EC2, so they cannot be disabled or deleted.
 
 **AMIs**
+- Each region will generate its `own unique AMI ID`
 - You can only share AMIs that have **unencrypted volumes** and volumes that are **encrypted with a customer-managed CMK**. If you share an AMI with encrypted volumes, you must also share any CMKs used to encrypt them.
 - You do not need to share the Amazon EBS snapshots that an AMI references in order to share the AMI. Only the AMI itself needs to be shared; the system automatically provides the access to the referenced Amazon EBS snapshots for the launch.
 - To make an AMI available in a different Region, copy the AMI to the Region and then share it. Sharing an AMI from different Regions is not available.
-
 - `No reboot` -> **crash-consistent**, the instance is not shut down while creating the AMI. This option is **not selected by default**.
 - It isn't possible to restore or recover a deleted or deregistered AMI. However, you can create a new, identical AMI using one of the following: 
   - EBS snapshots that were created as backups.
@@ -122,6 +125,8 @@ Amazon EC2 Auto Scaling uses the value of the `HealthCheckGracePeriod` for the A
 
 ASG configuration can either consider `EC2 health status checks` or `ELB health status checks`, **not both**.
 
+`warm pool` is a feature of Auto Scaling groups that allows you to scale out more quickly by having instances pre-initialized. Instead of waiting for an EC2 instance to initialize when a scale-out event occurs, the instance is ready and available in the warm pool, reducing the overall time for the scale-out operation.
+
 ## EBS
 - `EBS HDD volume - SC1` is backed by hard disk drives (HDDs) and provides the **lowest cost per GB** of all EBS volume types. It is ideal for less frequently accessed workloads with large, cold datasets
 - `EBS HDD volume - ST1` is backed by hard disk drives (HDDs) and is **ideal for frequently accessed**, throughput intensive workloads with large datasets and large I/O sizes, such as MapReduce, Kafka, log processing, data warehouse, and ETL workloads.
@@ -179,6 +184,8 @@ Built-in rotation support for secrets for the following:
 - Amazon Redshift clusters
 
 ## RDS
+AWS are responsible for patching the DB instance's underlying hardware, underlying operating system (OS), and **database engine version**.
+
 **Aurora logs**
 
 By design, Aurora Serverless connects to a proxy fleet of DB instances that scales automatically. Because there isn't a direct DB instance to access and host the log files, you can't view the logs directly from the Amazon Relational Database Service (Amazon RDS) console. However, you can view and download logs that are sent to the CloudWatch console.
@@ -201,9 +208,13 @@ To enable logs, first modify the cluster parameter groups for an Aurora serverle
 - A customer-initiated reboot of a primary doesn't trigger automatic failover. Other reboots and failures do trigger automatic failover
 
 **Memcached**
+- A Memcached cluster can have from 1 to 20 nodes
+
 With Amazon ElastiCache Memcached engine you cannot modify the node type. The way to scale up is to create a new cluster and specify the new node type. 
 
+`Evictions` occur when memory is over filled or greater than the maxmemory setting in the cache, resulting in the engine selecting keys to evict in order to manage its memory. -> Add more nodes, will provide more memory for storing the frequently used data and should lower the eviction count metrics
 ## S3
+- `s3:ListBucket` action must be allowed at the **bucket level**, not object level.
 - A `503 service unavailable error` is most likely caused by too many requests coming in within a very short period of time
 - You can retrieve 10 GB of your **Amazon S3 Glacier** data per month for free.
 - You cannot enable **default encryption** on objects, you enable it at the **bucket level**.
@@ -286,6 +297,8 @@ AWS CloudFormation creates a wait condition just like any other resource. When A
 
 A `cfn-init` script failure is still be followed by the `cfn-signal` script. The **Timeout** property determines how long AWS CloudFormation waits for the requisite number of success signals. Timeout is a minimum-bound property, meaning the timeout occurs no sooner than the time you specify, but can occur shortly thereafter. The maximum time that you can specify is 43200 seconds (12 hours ). The **stack creation can fail** if CloudFormation fails to receive a signal from your EC2 instance if the **Timeout property is set to a low value**.
 
+**Termination Protection**
+
 You cannot delete stacks that have termination protection enabled. The deletion fails and the stack - including its status - remains unchanged.
 
 This includes nested stacks whose root stacks have termination protection enabled. Disable termination protection on the root stack, then perform the delete operation again. It is strongly recommended that you do not delete nested stacks directly, but only delete them as part of deleting the root stack and all its resources.
@@ -293,6 +306,8 @@ This includes nested stacks whose root stacks have termination protection enable
 You must delete all objects in an Amazon S3 bucket or remove all instances in an Amazon EC2 security group before you can delete the bucket or security group. Otherwise, stack deletion fails and the stack will be in the DELETE_FAILED state.
 
 If you created an AWS resource outside of AWS CloudFormation management, you can bring this existing resource into AWS CloudFormation management using `resource import`.
+
+**Drift Detection**
 
 Performing a **drift detection** operation on a stack determines whether the stack has drifted from its expected template configuration, and returns detailed information about the drift status of each resource in the stack that supports drift detection.
 
@@ -307,13 +322,28 @@ To create a cross-stack reference, use the `Export output` field to flag the val
 
 Stack outputs are displayed on screen when stack is runned from AWS CLI
 
-The `ROLLBACK_COMPLETE` status indicates the successful removal of one or more stacks after a failed stack creation or after an explicitly canceled stack creation. Any resources that were created during the create stack action are deleted.
+`UPDATE_ROLLBACK_FAILED`: CloudFormation cannot roll back all changes during an update, solve the issue and **continue update rollback** functionality to reinitiate the rollback and bring the stack to the `UPDATE_ROLLBACK_COMPLETE` state.
 
-This status exists only after a failed stack creation. It signifies that all operations from the partially created stack have been appropriately cleaned up. When in this state, only a delete operation can be performed.
+The `ROLLBACK_COMPLETE` status indicates the successful removal of one or more stacks after a failed stack creation or after an explicitly canceled stack creation. Any resources that were created during the create stack action are deleted. This status exists only after a failed stack creation. It signifies that all operations from the partially created stack have been appropriately cleaned up. When in this state, only a delete operation can be performed.
 
 **STACK SETS**
 Stack sets can be created using either **self-managed permissions** or **service-managed permissions**. With service-managed permissions, you can deploy stack instances to accounts managed by AWS Organizations. Using this permissions model, you don't have to create the necessary IAM roles; StackSets creates the IAM roles on your behalf.
 - You must set up a trust relationship between the administrator (An administrator account is the AWS account in which you create stack sets) and target accounts before creating stacks in target accounts
+
+**Causes of a stack failure:**
+- Insufficient permissions in a target account for creating resources that are specified in your template.
+
+- The AWS CloudFormation template might have errors. Validate the template in AWS CloudFormation and fix errors before trying to create your stack set.
+
+- The template could be trying to create global resources that must be unique but aren't, such as S3 buckets.
+
+- A specified target account number doesn't exist. Check the target account numbers that you specified on the Set deployment options page of the wizard.
+
+- The administrator account does not have a trust relationship with the target account.
+
+- The maximum number of a resource that is specified in your template already exists in your target account. For example, you might have reached the limit of allowed IAM roles in a target account, but the template creates more IAM roles.
+
+- You have reached the maximum number of stacks that are allowed in a stack set.
 
 ## Service Advisor
 !["Service Advisor"](service-advisor.jpg)
@@ -340,6 +370,7 @@ Canaries check the availability and latency of your endpoints and can store load
 You can run a canary once or on a regular schedule. Scheduled canaries can run 24 hours a day, as often as once per minute
 
 **Cloudwatch metrics**
+- The **time stamp** can be up to **two weeks in the past** and up to **two hours into the future**
 - `StatusCheckFailed` - Reports whether the instance has passed both the instance status check and the system status check in the last minute.
 - `StatusCheckFailed_Instance` - Reports whether the instance has passed the instance status check in the last minute.
 - `StatusCheckFailed_System` - Reports whether the instance has passed the system status check in the last minute.
@@ -375,6 +406,10 @@ After you've created a flow log, you cannot change its configuration or the flow
 The second entry in the log file shows that the traffic was rejected. The flow logs indicate that the traffic was blocked when it tried to connect from the EC2 instance (172.32.17.148) on port 8081 to the on-premises system (10.0.1.23) on ephemeral port 60004.
 
 The rejection of traffic suggests that there is a network-level block preventing the outbound traffic from the EC2 instance. Since the flow logs indicate that the rejection occurred due to the ephemeral port range (60004) being blocked, it implies that the network ACL associated with the subnet where the EC2 instances reside is the cause of the issue.
+
+**VPN Connection**
+The Amazon VPC must know how to route traffic to the on-premises network. This is done by **enabling route propagation for the virtual private gateway in the VPC route table**. If route propagation is not enabled, the EC2 instances will not know how to route traffic to the on-premises resources even though the IPsec VPN tunnel is up.
+
 ## Artifact
 AWS Artifact is a self-service audit artifact retrieval portal that provides our customers with **on-demand access to AWS’ compliance documentation and AWS agreements**.
 
@@ -388,6 +423,8 @@ You can use **AWS Trusted Advisor’s Service Limit Dashboard** to determine whe
 
 ## Inspector
 Amazon Inspector is an automated security assessment service that helps you test the network accessibility of your Amazon EC2 instances and the security state of your applications running on the instances.
+
+The **Amazon Inspector agent** is an entity that collects installed package information and software configuration for an Amazon EC2 instance
 
 An Amazon Inspector assessment report can be generated for an assessment run once it has been successfully completed. An assessment report is a document that details what is tested in the assessment run, and the results of the assessment. The results of your assessment are formatted into a standard report, which can be generated to share results within your team for remediation actions, to enrich compliance audit data, or to store for future reference.
 
@@ -420,3 +457,9 @@ Therefore, the best solution is to create a new CMK and import new key material 
 User-defined tags are tags that you define, create, and apply to resources. After you have created and applied the user-defined tags, you can activate by using the Billing and Cost Management console for cost allocation tracking. **Cost Allocation Tags** appear on the console after you've enabled Cost Explorer, Budgets, AWS Cost and Usage reports, or legacy reports.
 
 When using AWS Organizations, you must use the **Billing and Cost Management console in the payer account** to mark the tags as cost allocation tags. You can use the **Cost Allocation Tags manager** to do this.
+
+## Route 53
+**Health checks**
+- No minimum length for the search string
+  
+- With `HTTP_STR_MATCH` Amazon Route 53 tries to establish a TCP connection. If successful, Route 53 submits an HTTP request and searches **the first 5,120 bytes of the response body** for the string that you specify in SearchString. If the response body contains the value that you specify in Search string, Route 53 considers the endpoint healthy
