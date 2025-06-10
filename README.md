@@ -35,6 +35,7 @@
 To capture EC2 state changes (e.g. Running->Stopped) use and `EventBridge rule`
 
 !["EC2 options"](ec2-options.jpg)
+The Compute Savings Plans offer flexibility and can apply to usage across any AWS region, any AWS compute service (including AWS Fargate), and across different instance families. Given that the company is transitioning to Fargate within the next six months, this is the most appropriate plan.
 - `InstanceLimitExceeded` error when you try to launch a new instance or restart a stopped instance, you have reached the limit on the number of instances that you can launch in a **Region**
 - `InsufficientInstanceCapacity` error when you try to launch a new instance or restart a stopped instance, AWS does not currently have enough available On-Demand capacity to fulfill your request.
 
@@ -85,12 +86,12 @@ Consider using enhanced networking for the following scenarios:
 
 - If your throughput is near or exceeding 20K packets per second (PPS) on the VIF driver, it's a best practice to use enhanced networking.
 
-**Capacity Reservations**
+**On-demand Capacity Reservations**
 - On-Demand Capacity Reservations enable you to reserve capacity for your Amazon EC2 instances in a specific Availability Zone for any duration.
 - Capacity Reservations do not offer any billing discounts. You can combine Capacity Reservations with Savings Plans or Regional Reserved Instances to receive a discount.
 - Capacity Reservations can be used with neither placement groups nor Dedicated Hosts.
 - You can share Capacity Reservations with other AWS accounts.
-
+!["capacity"](capacity.webp)
 **Spot Instances**
 You can specify that Amazon EC2 should do one of the following when it interrupts a Spot Instance:
 - Stop the Spot Instance
@@ -127,6 +128,11 @@ ASG configuration can either consider `EC2 health status checks` or `ELB health 
 
 `warm pool` is a feature of Auto Scaling groups that allows you to scale out more quickly by having instances pre-initialized. Instead of waiting for an EC2 instance to initialize when a scale-out event occurs, the instance is ready and available in the warm pool, reducing the overall time for the scale-out operation.
 
+**Lifecycle hooks**
+
+Lifecycle hooks enable you to perform custom actions by pausing instances as an ASG launches or terminates them. When an instance is paused, it remains in a wait state either until you complete the lifecycle action using the `complete-lifecycle-action` command or the `CompleteLifecycleAction` operation, or until the timeout period ends (one hour by default).
+
+For example, when a scale-in event occurs, the terminating instance is first deregistered from the load balancer. Then, a lifecycle hook pauses the instance before it is terminated. While the instance is in the wait state, you can, for example, connect to the instance and download logs or other data before the instance is fully terminated.
 ## EBS
 - `EBS HDD volume - SC1` is backed by hard disk drives (HDDs) and provides the **lowest cost per GB** of all EBS volume types. It is ideal for less frequently accessed workloads with large, cold datasets
 - `EBS HDD volume - ST1` is backed by hard disk drives (HDDs) and is **ideal for frequently accessed**, throughput intensive workloads with large datasets and large I/O sizes, such as MapReduce, Kafka, log processing, data warehouse, and ETL workloads.
@@ -184,6 +190,17 @@ Built-in rotation support for secrets for the following:
 - Amazon Redshift clusters
 
 ## RDS
+**Sharing Snapshots**
+Using Amazon RDS, you can share a manual DB snapshot in the following ways:
+
+- Sharing a manual DB snapshot, whether encrypted or unencrypted, enables authorized AWS accounts to copy the snapshot.
+
+- Sharing an unencrypted manual DB snapshot enables authorized AWS accounts to directly restore a DB instance from the snapshot instead of taking a copy of it and restoring from that.
+
+You can share a manual snapshot with up to 20 other AWS accounts. You can also share an unencrypted manual snapshot as public, which makes the snapshot available to all AWS accounts.
+
+**Patching DB**
+
 AWS are responsible for patching the DB instance's underlying hardware, underlying operating system (OS), and **database engine version**.
 
 **Aurora logs**
@@ -201,11 +218,26 @@ To enable logs, first modify the cluster parameter groups for an Aurora serverle
 
 `AuroraReplicaLagMaximum` - This metric captures the maximum amount of lag between the primary instance and each Aurora DB instance in the DB cluster.
 
+Reasons that trigger an RDS failover:
+- An Availability Zone outage.
+
+- The primary DB instance fails.
+
+- The DB instance's server type is changed.
+
+- The operating system of the DB instance is undergoing software patching.
+
+- A manual failover of the DB instance was initiated using Reboot with failover.
+
 ## ElastiCache
+Both `Amazon RDS` and `Amazon ElastiCache` offer maintenance windows. For both of these services a default maintenance window is provided. However, you can configure your own custom maintenance window that suits your system update schedule.
+
+**Redis**
 - Redis replication is **asynchronous**. Therefore, when a primary node fails over to a replica, a small amount of data might be lost due to replication lag.
 - When choosing the replica to promote to primary, ElastiCache for Redis chooses the replica with the least replication lag.
 - When you manually promote read replicas to primary on Redis (cluster mode disabled), you can do so only when Multi-AZ and automatic failover are disabled
 - A customer-initiated reboot of a primary doesn't trigger automatic failover. Other reboots and failures do trigger automatic failover
+- `Horizontal scaling` allows you to change the number of node groups (shards) in the replication group by adding or removing node groups (shards). The **online resharding** process **allows scaling in/out while the cluster continues serving incoming requests**
 
 **Memcached**
 - A Memcached cluster can have from 1 to 20 nodes
@@ -255,6 +287,10 @@ By default, the **log files** delivered by CloudTrail to your bucket are encrypt
 
 When you enable `log file integrity validation`, CloudTrail creates a hash for every log file that it delivers. Every hour, CloudTrail also creates and delivers a file that references the log files for the last hour and contains a hash of each. This file is called a digest file. CloudTrail signs each digest file using the private key of a public and private key pair. After delivery, you can use the public key to validate the digest file. CloudTrail uses different key pairs for each AWS region.
 
+**Cloudtrail data events**
+- Amazon S3 object-level API activity (for example, GetObject, DeleteObject, and PutObject API operations).
+
+- AWS Lambda function execution activity (the Invoke API).
 ## Config
 When you add a rule to your account, you can specify when you want AWS Config to run the rule; this is called a trigger. AWS Config evaluates your resource configurations against the rule when the trigger occurs. There are two types of triggers:
 
@@ -387,6 +423,8 @@ The only dimension that **Amazon SQS** sends to CloudWatch is `QueueName`. This 
 
 Using `Amazon CloudWatch alarm actions`, you can create alarms that automatically `stop`, `terminate`, `reboot`, or `recover` your EC2 instances. You can use the stop or terminate actions to help you save money when you no longer need an instance to be running. You can use the reboot and recover actions to automatically reboot those instances or recover them onto new hardware if a system **impairment** occurs
 ## Cloudfront
+Both `ALB access logs` and `Amazon CloudFront access logs` contain **layer 7 information** including the HTTP status codes
+
 If your Amazon **S3 bucket is configured as a website endpoint**, you can't configure CloudFront to use HTTPS to communicate with your origin because Amazon S3 doesn't support HTTPS connections in that configuration.
 
 ## VPC
@@ -445,6 +483,10 @@ You can select from two types of report for your assessment, a **findings report
 ## Service Catalog
 You can share portfolios in several ways, including **account-to-account sharing**, **organizational sharing**, and deploying catalogs using stack sets (creates independent copies).
 
+The products and constraints in the imported portfolio stay in **sync** with changes that you make to the shared portfolio, the original portfolio that you shared. **The recipient cannot change the products or constraints, but can add AWS Identity and Access Management (IAM) access for end users**.
+
+A recipient administrator can add imported products to local portfolios. The products will stay in sync with the shared portfolio. However, the recipient administrator cannot upload or add products to the imported portfolio or remove products from the imported portfolio.
+
 ## SSO
 **Permission sets** define the level of access that users and groups have to an AWS account. Permission sets are stored in AWS SSO and provisioned to the AWS account as IAM roles.
 
@@ -453,11 +495,14 @@ When you import key material into a CMK, the CMK is permanently associated with 
 
 Therefore, the best solution is to create a new CMK and import new key material into it. The alias in the application code can then be updated to point to the new CMK.
 
+- AWS KMS **automatically rotates AWS managed CMKs** every year (365 days).
+- Automatic key **rotation is disabled by default on customer managed CMKs**. AWS KMS also saves the CMK's older cryptographic material in perpetuity so it can be used to decrypt data that it encrypted. **AWS KMS does not delete any rotated key material until you delete the CMK**.
 ## Organizations
 User-defined tags are tags that you define, create, and apply to resources. After you have created and applied the user-defined tags, you can activate by using the Billing and Cost Management console for cost allocation tracking. **Cost Allocation Tags** appear on the console after you've enabled Cost Explorer, Budgets, AWS Cost and Usage reports, or legacy reports.
 
 When using AWS Organizations, you must use the **Billing and Cost Management console in the payer account** to mark the tags as cost allocation tags. You can use the **Cost Allocation Tags manager** to do this.
 
+`AWS Health Organizational View` enables you to aggregate AWS Health events from all accounts in your organization in one place.
 ## Route 53
 **Health checks**
 - No minimum length for the search string
