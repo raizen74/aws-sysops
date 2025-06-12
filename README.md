@@ -29,14 +29,17 @@
 - [KMS](#kms)
 - [Organizations](#organizations)
 - [Route 53](#route-53)
+- [WAF](#waf)
 
 
 ## EC2
+Stopping and starting the instance does not change its **Availability Zone** (it changes the host only). Creating an AMI allows the capture of the existing instance's software configuration, which can then be used to launch new instances in any **Availability Zone**. This is the best way to move the instance across AZs.
+
 To capture EC2 state changes (e.g. Running->Stopped) use and `EventBridge rule`
 
 !["EC2 options"](ec2-options.jpg)
 The Compute Savings Plans offer flexibility and can apply to usage across any AWS region, any AWS compute service (including AWS Fargate), and across different instance families. Given that the company is transitioning to Fargate within the next six months, this is the most appropriate plan.
-- `InstanceLimitExceeded` error when you try to launch a new instance or restart a stopped instance, you have reached the limit on the number of instances that you can launch in a **Region**
+- `InstanceLimitExceeded` error when you try to launch a new instance or restart a stopped instance, you have reached the limit on the number of instances that you can launch in a **Region**. You can use the **Limits** page in the Amazon EC2 console to request an increase in your Amazon EC2 or Amazon VPC resources, on a per-Region basis. Alternatively, you can request an increase using **Service Quotas**
 - `InsufficientInstanceCapacity` error when you try to launch a new instance or restart a stopped instance, AWS does not currently have enough available On-Demand capacity to fulfill your request.
 
 **Burstable instances**
@@ -151,6 +154,12 @@ There is a significant increase in latency when you first access each block of d
 - Enable fast snapshot to restore on a snapshot to ensure that the EBS volumes created from it are fully-initialized at creation and instantly deliver all of their provisioned performance.
 
 ## EFS
+There are two throughput modes to choose from for your file system, `Bursting Throughput` and `Provisioned Throughput`:
+
+- With `Bursting Throughput` mode, throughput on Amazon EFS scales as the size of your file system in the EFS Standard or One Zone storage class grows.
+
+- With `Provisioned Throughput` mode, you can instantly provision the throughput of your file system (in MiB/s) independent of the amount of data stored.
+
 To track the number of Amazon EC2 instances that are connected to a file system, you can monitor the `Sum` statistic of the `ClientConnections` metric. To calculate the average `ClientConnections` for periods greater than one minute, divide the sum by the number of minutes in the period.
 
 **EFS mount helper**:
@@ -216,6 +225,8 @@ To enable logs, first modify the cluster parameter groups for an Aurora serverle
 
 **For Amazon Aurora DB instances, you can't choose a specific subnet**. Instead, choose a DB subnet group when you create the instance. A DB subnet group is a collection of subnets that belong to a VPC. When it creates the underlying host, Amazon RDS randomly chooses a subnet from the DB subnet group.
 
+**Aurora Auto Scaling** dynamically adjusts the **number of Aurora Replicas** provisioned for an Aurora DB cluster using single-master replication.
+
 `AuroraReplicaLagMaximum` - This metric captures the maximum amount of lag between the primary instance and each Aurora DB instance in the DB cluster.
 
 Reasons that trigger an RDS failover:
@@ -229,6 +240,16 @@ Reasons that trigger an RDS failover:
 
 - A manual failover of the DB instance was initiated using Reboot with failover.
 
+Root causes for DB connectivity issues:
+- The RDS DB instance is in a state other than available, so it can't accept connections.
+
+- The source you use to connect to the DB instance is missing from the sources authorized to access the DB instance in your security group, network access control lists (ACLs), or local firewalls.
+
+- The wrong DNS name or endpoint was used to connect to the DB instance.
+
+- The Multi-AZ DB instance failed over, and the secondary DB instance uses a subnet or route table that doesn't allow inbound connections.
+
+- The user authentication is incorrect.
 ## ElastiCache
 Both `Amazon RDS` and `Amazon ElastiCache` offer maintenance windows. For both of these services a default maintenance window is provided. However, you can configure your own custom maintenance window that suits your system update schedule.
 
@@ -247,6 +268,7 @@ With Amazon ElastiCache Memcached engine you cannot modify the node type. The wa
 `Evictions` occur when memory is over filled or greater than the maxmemory setting in the cache, resulting in the engine selecting keys to evict in order to manage its memory. -> Add more nodes, will provide more memory for storing the frequently used data and should lower the eviction count metrics
 ## S3
 - `s3:ListBucket` action must be allowed at the **bucket level**, not object level.
+- Read Access action must be allowed at the **object level**, not bucket level.
 - A `503 service unavailable error` is most likely caused by too many requests coming in within a very short period of time
 - You can retrieve 10 GB of your **Amazon S3 Glacier** data per month for free.
 - You cannot enable **default encryption** on objects, you enable it at the **bucket level**.
@@ -307,6 +329,7 @@ AWS Config performs a baseline every six hours to check for new configuration it
 ## Cloudformation
 !["stack policies"](stack-policies.jpg)
 
+**You can only preview changes with a change set**
 !["Change Sets"](change-sets.png)
 
 - `Parameter constraints` describe allowed input values so that AWS CloudFormation catches any invalid values before creating a stack. You can set constraints such as a minimum length, maximum length, and allowed patterns.
@@ -363,6 +386,9 @@ Stack outputs are displayed on screen when stack is runned from AWS CLI
 The `ROLLBACK_COMPLETE` status indicates the successful removal of one or more stacks after a failed stack creation or after an explicitly canceled stack creation. Any resources that were created during the create stack action are deleted. This status exists only after a failed stack creation. It signifies that all operations from the partially created stack have been appropriately cleaned up. When in this state, only a delete operation can be performed.
 
 **STACK SETS**
+u
+Updating a stack set updates all stack instances. If you have 20 accounts each in two regions, you will have 40 stack instances, and all will be updated when you update the stack set.
+
 Stack sets can be created using either **self-managed permissions** or **service-managed permissions**. With service-managed permissions, you can deploy stack instances to accounts managed by AWS Organizations. Using this permissions model, you don't have to create the necessary IAM roles; StackSets creates the IAM roles on your behalf.
 - You must set up a trust relationship between the administrator (An administrator account is the AWS account in which you create stack sets) and target accounts before creating stacks in target accounts
 
@@ -406,6 +432,8 @@ Canaries check the availability and latency of your endpoints and can store load
 You can run a canary once or on a regular schedule. Scheduled canaries can run 24 hours a day, as often as once per minute
 
 **Cloudwatch metrics**
+- The `DiskReadBytes` metric and the `DiskWriteBytes` metrics are associated with the **AWS/EC2 namespace** and report on the read and write performance of attached **instance store volumes**, not EBS volumes.
+- The `VolumeReadBytes` metric and the `VolumeWriteBytes` metric are associated with the **EBS namespace**
 - The **time stamp** can be up to **two weeks in the past** and up to **two hours into the future**
 - `StatusCheckFailed` - Reports whether the instance has passed both the instance status check and the system status check in the last minute.
 - `StatusCheckFailed_Instance` - Reports whether the instance has passed the instance status check in the last minute.
@@ -422,6 +450,8 @@ The only dimension that **Amazon SQS** sends to CloudWatch is `QueueName`. This 
 - Creating a Systems Manager OpsItem
 
 Using `Amazon CloudWatch alarm actions`, you can create alarms that automatically `stop`, `terminate`, `reboot`, or `recover` your EC2 instances. You can use the stop or terminate actions to help you save money when you no longer need an instance to be running. You can use the reboot and recover actions to automatically reboot those instances or recover them onto new hardware if a system **impairment** occurs
+
+
 ## Cloudfront
 Both `ALB access logs` and `Amazon CloudFront access logs` contain **layer 7 information** including the HTTP status codes
 
@@ -508,3 +538,6 @@ When using AWS Organizations, you must use the **Billing and Cost Management con
 - No minimum length for the search string
   
 - With `HTTP_STR_MATCH` Amazon Route 53 tries to establish a TCP connection. If successful, Route 53 submits an HTTP request and searches **the first 5,120 bytes of the response body** for the string that you specify in SearchString. If the response body contains the value that you specify in Search string, Route 53 considers the endpoint healthy
+
+## WAF
+**rate-based rule**, enter the maximum number of requests to allow in any five-minute period from an IP address that matches the rule's conditions.When an IP address reaches the rate limit threshold, AWS WAF applies the assigned action (block or count) as quickly as possible, usually within 30 seconds. Once the action is in place, if five minutes pass with no requests from the IP address, AWS WAF resets the counter to zero.
