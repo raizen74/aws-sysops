@@ -165,6 +165,8 @@ To track the number of Amazon EC2 instances that are connected to a file system,
 **EFS mount helper**:
 - Mounting with IAM authorization
 - Auto-mounting when an EC2 instance reboots
+
+Amazon EFS supports two forms of encryption for file systems, **encryption of data in transit** and **encryption at rest**. You can enable encryption of data at rest when creating an Amazon EFS file system. You can enable encryption of data in transit when you mount the file system.
 ## Storage Gateway
 If your gateway or virtual machine malfunctions
 - you can recover data that has been uploaded to AWS and stored on a volume in Amazon S3
@@ -219,7 +221,7 @@ By design, Aurora Serverless connects to a proxy fleet of DB instances that scal
 To enable logs, first modify the cluster parameter groups for an Aurora serverless cluster. For MySQL-compatible DB clusters, you can enable the slow query log, general log, or audit logs.
 ![aurora-logs](aurora-logs.jpg)
 
-**Enhanced Monitoring** for RDS provides the following OS metrics: 1.Free Memory 2.Active Memory 3.Swap Free 4.Processes Running 5.File System Used
+**Enhanced Monitoring** for RDS provides the following OS metrics: 1.Free Memory 2.Active Memory 3.Swap Free 4.Processes Running 5.File System Used. Amazon RDS provides metrics in real time for the operating system (OS) that your DB instance runs on. You can view the metrics for your DB instance using the console. Also, you can consume the **Enhanced Monitoring** JSON output from Amazon CloudWatch Logs in a monitoring system of your choice.
 
 **Performance Insights** collects metric data from the database engine to monitor the actual load on a database. 
 
@@ -254,6 +256,7 @@ Root causes for DB connectivity issues:
 Both `Amazon RDS` and `Amazon ElastiCache` offer maintenance windows. For both of these services a default maintenance window is provided. However, you can configure your own custom maintenance window that suits your system update schedule.
 
 **Redis**
+- When using a single shard with **cluster mode disabled** you can create **up to 5 replicas** and the replicas can be in a separate AZ and this adds high availability with auto-failover.
 - Redis replication is **asynchronous**. Therefore, when a primary node fails over to a replica, a small amount of data might be lost due to replication lag.
 - When choosing the replica to promote to primary, ElastiCache for Redis chooses the replica with the least replication lag.
 - When you manually promote read replicas to primary on Redis (cluster mode disabled), you can do so only when Multi-AZ and automatic failover are disabled
@@ -313,6 +316,8 @@ When you enable `log file integrity validation`, CloudTrail creates a hash for e
 - Amazon S3 object-level API activity (for example, GetObject, DeleteObject, and PutObject API operations).
 
 - AWS Lambda function execution activity (the Invoke API).
+
+`AWS CloudTrail` can be used to track the activity of **federated users**. To capture the activity of these federated users, CloudTrail records the following **AWS Security Token Service (AWS STS) API calls**: `AssumeRoleWithWebIdentity` and `AssumeRoleWithSAML`.
 ## Config
 When you add a rule to your account, you can specify when you want AWS Config to run the rule; this is called a trigger. AWS Config evaluates your resource configurations against the rule when the trigger occurs. There are two types of triggers:
 
@@ -520,6 +525,9 @@ A recipient administrator can add imported products to local portfolios. The pro
 ## SSO
 **Permission sets** define the level of access that users and groups have to an AWS account. Permission sets are stored in AWS SSO and provisioned to the AWS account as IAM roles.
 
+**SSO uses IAM roles**
+
+The company is using federated login with AWS SSO. In this setup, the process results in using the `AssumeRole* API` actions to assume an **IAM role that has a permissions policy attached granting the necessary permissions**. SSO uses IAM roles.
 ## KMS
 When you import key material into a CMK, the CMK is permanently associated with that key material. You can reimport the same key material, but you cannot import different key material into that CMK. Also, you cannot enable automatic key rotation for a CMK with imported key material. However, you can manually rotate a CMK with imported key material.
 
