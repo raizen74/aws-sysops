@@ -30,19 +30,27 @@
 - [Organizations](#organizations)
 - [Route 53](#route-53)
 - [WAF](#waf)
+- [DataSync](#datasync)
+- [IAM Access Analyzer](#iam-access-analyzer)
+- [FSx](#fsx)
 
 
 ## EC2
+
+**SSH troubleshooting**: SSH **unprotected private key file error** -> pem file must have 400 permissions
+
+CW alarm **Instance Recovery**: Same private and public IP, elastic IP, metadata and placement group
+
 Stopping and starting the instance does not change its **Availability Zone** (it changes the host only). Creating an AMI allows the capture of the existing instance's software configuration, which can then be used to launch new instances in any **Availability Zone**. This is the best way to move the instance across AZs.
 
 To capture EC2 state changes (e.g. Running->Stopped) use and `EventBridge rule`
 
 !["EC2 options"](ec2-options.jpg)
 The Compute Savings Plans offer flexibility and can apply to usage across any AWS region, any AWS compute service (including AWS Fargate), and across different instance families. Given that the company is transitioning to Fargate within the next six months, this is the most appropriate plan.
-- `InstanceLimitExceeded` error when you try to launch a new instance or restart a stopped instance, you have reached the limit on the number of instances that you can launch in a **Region**. You can use the **Limits** page in the Amazon EC2 console to request an increase in your Amazon EC2 or Amazon VPC resources, on a per-Region basis. Alternatively, you can request an increase using **Service Quotas**
-- `InsufficientInstanceCapacity` error when you try to launch a new instance or restart a stopped instance, AWS does not currently have enough available On-Demand capacity to fulfill your request.
+- `InstanceLimitExceeded` error when you try to launch a new instance or restart a stopped instance, you have reached the limit of **vCPUs** that you can launch in a **Region**, these limits apply to **On-Demand and Spot instances**. You can use the **Limits** page in the Amazon EC2 console to request an increase in your Amazon EC2 or Amazon VPC resources, on a per-Region basis. Alternatively, you can request an increase using **Service Quotas**. 
+- `InsufficientInstanceCapacity` error when you try to launch a new instance or restart a stopped instance, **AWS does not currently have enough available On-Demand capacity on this AZ** to fulfill your request. Try launching in another AZ.
 
-**Burstable instances**
+**Burstable instances: t2/t3**
 Provide a baseline level of CPU utilization with the ability to burst CPU utilization above the baseline level. The baseline utilization and ability to burst are governed by CPU credits.
 
 The CPU credits used depends on CPU utilization. The following scenarios all use one CPU credit:
@@ -59,16 +67,18 @@ To resolve CPU throttling, you can either **enable T2/T3 Unlimited**, or **chang
 - To prevent Amazon EC2 Auto Scaling from terminating unhealthy instances, suspend the `ReplaceUnhealthy` process.
 - To specify which instances Amazon EC2 Auto Scaling should terminate first, choose a termination policy.
 
-The `DisableApiTermination` attribute controls whether the instance can be terminated using the console, CLI, or API
+The `DisableApiTermination` attribute controls whether the instance can be terminated using the console, CLI, or API. `DisableApiTermination=True` prevents termination via CLI or API, not from OS.
 
 `Status checks ` are performed **every minute** at no charge, returning a pass or a fail status. If all checks pass, the overall status of the instance is OK. If one or more checks fail, the overall status is impaired. `Status checks` are built into Amazon EC2, so they cannot be disabled or deleted.
 
 **AMIs**
 - Each region will generate its `own unique AMI ID`
 - You can only share AMIs that have **unencrypted volumes** and volumes that are **encrypted with a customer-managed CMK**. If you share an AMI with encrypted volumes, you must also share any CMKs used to encrypt them.
+- You can copy an AMI that has been shared with you, then you are the owner of the AMI in your account. You need that the **source AMI owner grants you read permissions** for the storage that backs the AMI (EBS snapshot).
 - You do not need to share the Amazon EBS snapshots that an AMI references in order to share the AMI. Only the AMI itself needs to be shared; the system automatically provides the access to the referenced Amazon EBS snapshots for the launch.
-- To make an AMI available in a different Region, copy the AMI to the Region and then share it. Sharing an AMI from different Regions is not available.
+- To make an AMI available in a different Region, copy the AMI to the Region and then share it. Sharing an AMI to different Regions is not available.
 - `No reboot` -> **crash-consistent**, the instance is not shut down while creating the AMI. This option is **not selected by default**.
+- When using `AWS Backup` to create AMIs, only no-reboot option is available (instance is not rebooted).
 - It isn't possible to restore or recover a deleted or deregistered AMI. However, you can create a new, identical AMI using one of the following: 
   - EBS snapshots that were created as backups.
   - EC2 instances that were launched from the deleted AMI
@@ -83,7 +93,7 @@ The `DisableApiTermination` attribute controls whether the instance can be termi
 
 **Enhanced Networking**
 
-Consider using enhanced networking for the following scenarios:
+Available in new generation (t3). Consider using enhanced networking for the following scenarios:
 
 - If your packets-per-second rate reaches its ceiling, consider moving to enhanced networking. If your rate reaches its ceiling, you've likely reached the upper thresholds of the virtual network interface driver.
 
@@ -95,15 +105,21 @@ Consider using enhanced networking for the following scenarios:
 - Capacity Reservations can be used with neither placement groups nor Dedicated Hosts.
 - You can share Capacity Reservations with other AWS accounts.
 !["capacity"](capacity.webp)
+
 **Spot Instances**
 You can specify that Amazon EC2 should do one of the following when it interrupts a Spot Instance:
 - Stop the Spot Instance
-- Hibernate the Spot Instance
+- Hibernate the Spot Instance. Ram state is written in **the root EBS volume that must be encrypted**
 - Terminate the Spot Instance
 
 The **default is to terminate Spot Instances** when they are interrupted.
 
 AWS releases your instance's public IP address when it is `stopped`, `hibernated`, or `terminated`. Your `stopped` or `hibernated` instance receives a new public IP address when it is started.
+
+**EC2 status checks:**
+- system: Stop and Start to migrate the host
+- instance: Reboot
+- attached: Reboot
 ## ALB
 - `HTTP 503: Service unavailable will be received as response` is returned if the target groups for the load balancer have no registered targets.
 - `HTTP 403: Forbidden will be returned` is returned if you configured an AWS WAF web access control list (web ACL) to monitor requests to your Application Load Balancer and it blocked the request.
@@ -137,6 +153,10 @@ Lifecycle hooks enable you to perform custom actions by pausing instances as an 
 
 For example, when a scale-in event occurs, the terminating instance is first deregistered from the load balancer. Then, a lifecycle hook pauses the instance before it is terminated. While the instance is in the wait state, you can, for example, connect to the instance and download logs or other data before the instance is fully terminated.
 ## EBS
+EBS volumes are AZ locked. To migrate it to a different AZ you have to create a snapshot, then you create a volume from the snapshot in the AZ of your choice. You also can copy the snapshot to another Region.
+
+You can copy an unencrypted snapshot to an encrypted one and restore an EBS encrypted volume from it, or you can directly create an encrypted EBS volume from an unencrypted EBS snapshot
+
 - `EBS HDD volume - SC1` is backed by hard disk drives (HDDs) and provides the **lowest cost per GB** of all EBS volume types. It is ideal for less frequently accessed workloads with large, cold datasets
 - `EBS HDD volume - ST1` is backed by hard disk drives (HDDs) and is **ideal for frequently accessed**, throughput intensive workloads with large datasets and large I/O sizes, such as MapReduce, Kafka, log processing, data warehouse, and ETL workloads.
 
@@ -153,6 +173,19 @@ There is a significant increase in latency when you first access each block of d
 - Access each block before putting the volume into production. This process is called initialization (formerly known as **pre-warming**).
 - Enable fast snapshot to restore on a snapshot to ensure that the EBS volumes created from it are fully-initialized at creation and instantly deliver all of their provisioned performance.
 
+`EBS Fast Snapshot Restore`: Everytime you access a block of data from EBS for the first time, it is pulled from s3 -> latency. Solution:
+- use `dd` or `fio` command on ec2
+- Enable FSR
+
+**EBS resizing**. You only can **increase EBS volumes**. You do not need to detach a volume to take a snapshot but recommended to avoid inconsistencies:
+- size (any type)
+- IOPS (only io1)
+
+`Amazon Data Lifecycle Manager`: Automates EBS and EBS-backed AMIs snapshots.
+
+**Recycle bin for EBS Snapshots** -> Retention 1 day - 1 year
+
+**EBS snapshot archive**: 24-72h to restore, 70% cheaper
 ## EFS
 There are two throughput modes to choose from for your file system, `Bursting Throughput` and `Provisioned Throughput`:
 
@@ -167,7 +200,34 @@ To track the number of Amazon EC2 instances that are connected to a file system,
 - Auto-mounting when an EC2 instance reboots
 
 Amazon EFS supports two forms of encryption for file systems, **encryption of data in transit** and **encryption at rest**. You can enable encryption of data at rest when creating an Amazon EFS file system. You can enable encryption of data in transit when you mount the file system.
+
+**Important info about EFS**:
+- To migrate data from unencrypted EFS to encrypted EFS use `AWS DataSync`.
+- To **enable Max I/O on an EFS drive**, you must perform a migration (cannot be done inplace)
+
+EFS - CW Metrics:
+- PercentIOLimit
+- BurstCreditBalance
+- StorageBytes
 ## Storage Gateway
+**Troubleshooting**
+
+Storage Gateway Maintenance:
+- File Gateway: Restart the Storage Gateway VM
+- Volume and Tape Gateway: Stop and Start
+
+Storage GW - Activations, 2 Options:
+- Using GW VM CLI
+- Make a request to Gateway VM port 80 from AWS
+
+Troubleshooting Activation:
+- Make sure the GW has port 80 open
+- Check GW time is correct, sync time with NTP
+
+Volume GW cache mode, you want:
+- `CacheHitPercent` high
+- `CachePercentUsed` low, if high you create a larger cache disk by cloning to a new volume of larger size and select the new disk as cached volume
+
 If your gateway or virtual machine malfunctions
 - you can recover data that has been uploaded to AWS and stored on a volume in Amazon S3
 - For cached volumes gateways, you recover data from a recovery snapshot
@@ -201,18 +261,23 @@ Built-in rotation support for secrets for the following:
 - Amazon Redshift clusters
 
 ## RDS
-**Sharing Snapshots**
-Using Amazon RDS, you can share a manual DB snapshot in the following ways:
+RDS and Aurora have not SSH available except for RDS Custom.
 
+**Automatic Backups**: Happen during maintenance windows, point in time recovery, 1-35 days, restore to a new DB cluster.
+
+**Aurora DB Cloning**: new DB cluster that uses the **same volume** as the original cluster.
+
+**Aurora backtracking**: rewind back and forth in time (up to 72h), **in-place restore**, **only available in MySQL**
+
+**Sharing Snapshots**. Using Amazon RDS, you can share a manual DB snapshot in the following ways:
+- You can only share unencrypted snapshots and snapshots encrypted with CMK
 - Sharing a manual DB snapshot, whether encrypted or unencrypted, enables authorized AWS accounts to copy the snapshot.
-
 - Sharing an unencrypted manual DB snapshot enables authorized AWS accounts to directly restore a DB instance from the snapshot instead of taking a copy of it and restoring from that.
-
-You can share a manual snapshot with up to 20 other AWS accounts. You can also share an unencrypted manual snapshot as public, which makes the snapshot available to all AWS accounts.
+- You can share a manual snapshot with up to 20 other AWS accounts. You can also share an unencrypted manual snapshot as public, which makes the snapshot available to all AWS accounts.
 
 **Patching DB**
 
-AWS are responsible for patching the DB instance's underlying hardware, underlying operating system (OS), and **database engine version**.
+AWS are responsible for patching the DB instance's underlying hardware, underlying operating system (OS), and **database engine version**. Customer is responsible for scheduling this events.
 
 **Aurora logs**
 
@@ -221,9 +286,15 @@ By design, Aurora Serverless connects to a proxy fleet of DB instances that scal
 To enable logs, first modify the cluster parameter groups for an Aurora serverless cluster. For MySQL-compatible DB clusters, you can enable the slow query log, general log, or audit logs.
 ![aurora-logs](aurora-logs.jpg)
 
-**Enhanced Monitoring** for RDS provides the following OS metrics: 1.Free Memory 2.Active Memory 3.Swap Free 4.Processes Running 5.File System Used. Amazon RDS provides metrics in real time for the operating system (OS) that your DB instance runs on. You can view the metrics for your DB instance using the console. Also, you can consume the **Enhanced Monitoring** JSON output from Amazon CloudWatch Logs in a monitoring system of your choice.
+**Enhanced Monitoring** for RDS: Agent running on the DB Instance collecting info about processes or threads, provides the following OS metrics:
+- Free Memory
+- Active Memory
+- Swap Free
+- Processes Running
+- File System Used
+Amazon RDS provides metrics in real time for the operating system (OS) that your DB instance runs on. You can view the metrics for your DB instance using the console. Also, you can consume the **Enhanced Monitoring** JSON output from Amazon CloudWatch Logs in a monitoring system of your choice.
 
-**Performance Insights** collects metric data from the database engine to monitor the actual load on a database. 
+**Performance Insights** Dashboard to visualize load on the RDS DB and filter the load e.g. filter by host to find the host using most the DB. Not available on `db.t2.micro` 
 
 **For Amazon Aurora DB instances, you can't choose a specific subnet**. Instead, choose a DB subnet group when you create the instance. A DB subnet group is a collection of subnets that belong to a VPC. When it creates the underlying host, Amazon RDS randomly chooses a subnet from the DB subnet group.
 
@@ -231,44 +302,69 @@ To enable logs, first modify the cluster parameter groups for an Aurora serverle
 
 `AuroraReplicaLagMaximum` - This metric captures the maximum amount of lag between the primary instance and each Aurora DB instance in the DB cluster.
 
-Reasons that trigger an RDS failover:
-- An Availability Zone outage.
+**RDS Failover Conditions**:
 
-- The primary DB instance fails.
-
-- The DB instance's server type is changed.
-
-- The operating system of the DB instance is undergoing software patching.
-
-- A manual failover of the DB instance was initiated using Reboot with failover.
+1. Primary Instance failure
+- Failed
+- OS is undergoing software patching
+- Unreachable due to network connectivity loss
+- Modified e.g. DB instance type
+- Busy and unresponsive
+- Underlying storage failure
+1. AZ Outage
+2. Manual failover of the DB instance initiated with `Reboot with failover`
 
 Root causes for DB connectivity issues:
 - The RDS DB instance is in a state other than available, so it can't accept connections.
-
 - The source you use to connect to the DB instance is missing from the sources authorized to access the DB instance in your security group, network access control lists (ACLs), or local firewalls.
-
 - The wrong DNS name or endpoint was used to connect to the DB instance.
-
 - The Multi-AZ DB instance failed over, and the secondary DB instance uses a subnet or route table that doesn't allow inbound connections.
-
 - The user authentication is incorrect.
+
+
+
 ## ElastiCache
 Both `Amazon RDS` and `Amazon ElastiCache` offer maintenance windows. For both of these services a default maintenance window is provided. However, you can configure your own custom maintenance window that suits your system update schedule.
 
-**Redis**
-- When using a single shard with **cluster mode disabled** you can create **up to 5 replicas** and the replicas can be in a separate AZ and this adds high availability with auto-failover.
-- Redis replication is **asynchronous**. Therefore, when a primary node fails over to a replica, a small amount of data might be lost due to replication lag.
+Redis replication is **asynchronous** (Eventual consistent). Therefore, when a primary node fails over to a replica, a small amount of data might be lost due to replication lag.
+
+
+**Redis Cluster mode disabled**
+- 1 primary node and up to 5 replicas, the replicas can be in a separate AZ and this adds high availability with auto-failover.
+- MultiAZ enabled by default
+- If primary node fails, replicas can take over
+- Horizontal scaling (up to 5 replicas)
+- Vertical scaling (`creates new node group` and `DNS update` (transparent for your app))
 - When choosing the replica to promote to primary, ElastiCache for Redis chooses the replica with the least replication lag.
-- When you manually promote read replicas to primary on Redis (cluster mode disabled), you can do so only when Multi-AZ and automatic failover are disabled
-- A customer-initiated reboot of a primary doesn't trigger automatic failover. Other reboots and failures do trigger automatic failover
-- `Horizontal scaling` allows you to change the number of node groups (shards) in the replication group by adding or removing node groups (shards). The **online resharding** process **allows scaling in/out while the cluster continues serving incoming requests**
+- When you manually promote read replicas to primary on Redis, you can do so only when Multi-AZ and automatic failover are disabled
+- **A customer-initiated reboot of a primary doesn't trigger automatic failover**. Other reboots and failures do trigger automatic failover
+
+**Redis Cluster mode enabled**
+- Data is partitioned across shards (scales writes)
+- Each shard has 1 primary node and up to 5 replica nodes (same as cluster mode disabled)
+- **Up to 500 nodes per cluster** e.g. 500 shards with single master, 250 shards with 1 master 1 replica
+- **Autoscaling shards and replicas** via target tracking and scheduled scaling actions e.g. `CPUUtilization`
+
+**Redis Connection Endpoints**:
+- Cluster mode enabled: 1 configuration endpoint for r/w ops. 1 Node endpoint per node for read ops.
+- Cluster mode disabled: 1 primary endpoint for w ops. 1 Reader endpoint for r ops. 1 Node endpoint per node for read ops
+
+**Redis Scaling - Cluster Mode Enabled**:
+- **2 Modes**: `Online Scaling` (No downtime, some degradation in performance) `Offline Scaling` (Downtime, supports changing node type, upgrade engine version) etc
+- **Horizontal**: Resharding (adding/removing shards). Shard rebalancing (redistribute shards). **Supports both Online and Offline Scaling**. Allows you to change the number of node groups (shards) in the replication group by adding or removing node groups (shards). The **online resharding** process **allows scaling in/out while the cluster continues serving incoming requests**
+- **Vertical**: Changing node type, only supports `Online Scaling`
 
 **Memcached**
-- A Memcached cluster can have from 1 to 20 nodes
+- Memcached clusters can have 1-40 nodes.
+- Horizontal scaling: Add/remove nodes, auto-discovery feature
+- Vertical Scaling: Change instance type, creates a new cluster. You must update your application to use the new endpoint and **manually** delete the old cluster.
 
-With Amazon ElastiCache Memcached engine you cannot modify the node type. The way to scale up is to create a new cluster and specify the new node type. 
+With Amazon ElastiCache Memcached engine you cannot modify the node type. The way to scale up is to create a new cluster and specify the new node type.
 
-`Evictions` occur when memory is over filled or greater than the maxmemory setting in the cache, resulting in the engine selecting keys to evict in order to manage its memory. -> Add more nodes, will provide more memory for storing the frequently used data and should lower the eviction count metrics
+`ElastiCache Evictions` occur when memory is over filled or greater than the maxmemory setting in the cache, resulting in the engine selecting keys to evict in order to manage its memory. -> Solutions:
+- Add more nodes, will provide more memory for storing the frequently used data and should lower the eviction count metrics
+- Set up `eviction policy`
+
 ## S3
 - `s3:ListBucket` action must be allowed at the **bucket level**, not object level.
 - Read Access action must be allowed at the **object level**, not bucket level.
@@ -305,8 +401,12 @@ When you use bucket default settings, you don't specify a `Retain Until Date`. I
 
 `Object Lock` works **only in versioned buckets**, and `retention periods` and `legal holds` apply to individual object versions.
 
+**Bucket policy:**
+- `AWS:SourceVpce` to specify 1 vpc endpoint
+- `AWS:SourceVpc` to allow all VPC endpoints
+
 ## Cloudtrail
-Cloudtrail **log files** and **digest files** are stored in the **same s3 bucket**.
+Cloudtrail is not real-time: it can take **up to 15 minutes to log an api call**, **delivers log files to s3 within 5 minutes**. Cloudtrail **log files** and **digest files** are stored in the **same s3 bucket**.
 
 By default, the **log files** delivered by CloudTrail to your bucket are encrypted by Amazon server-side encryption with Amazon S3-managed encryption keys (SSE-S3). To provide a directly manageable security layer, you can instead use server-side encryption with AWS KMS–managed keys **(SSE-KMS) for your CloudTrail log files**. Enabling server-side encryption encrypts the log files but not the digest files with SSE-KMS. **Digest files are encrypted with Amazon S3-managed encryption keys (SSE-S3)**.
 
@@ -332,9 +432,33 @@ Amazon EC2 deletes the Amazon EBS volume that has the `DeleteOnTermination` attr
 
 AWS Config performs a baseline every six hours to check for new configuration items with the `ResourceDeleted` status. The AWS Config rule then removes the deleted EBS volumes from the evaluation results.
 ## Cloudformation
+`Service Role` -> A user without permissions for aws services is able to create these services with Cloudformation, the user needs `iam:PassRole` policy, and the service role policy can be e.g. `s3:*Bucket`. This will allow the user to create buckets with Cloudformation. If not specified, Cloudformation will use the user permissions.
+
+**Cloudformation capabilities**:
+- `CAPABILITY_NAMED_IAM` and `CAPABILITY_IAM`: when cloudformation needs to create IAM resources, when are named use `CAPABILITY_NAMED_IAM`
+- `CAPABILITY_AUTO_EXPAND`: Macros or Nested Stacks
+
+**DeletionPolicy** -> attr of a template resource, possible values: Delete, Retain, Snapshot
+
+**Custom Resources** are useful to run scripts during create/update/delete stack operations through Lambda functions. e.g. to empty an S3 bucket before being deleted Custom::MyLambdaResource
+
+**Stack Policies**: JSON document that defines the update actions allowed on specific resources during Stack updates.
+
+When you create a stack, all update actions are allowed on all resources. By default, anyone with stack update permissions can update all of the resources in the stack. You can prevent stack resources from being unintentionally updated or deleted during a stack update by using a `stack policy`. After you set a stack policy, all of the resources in the stack are protected by default. A **stack policy applies only during stack updates**.
+
 !["stack policies"](stack-policies.jpg)
 
-**You can only preview changes with a change set**
+`OnFailure` property of the CloudFormation CreateStack call for this use-case. The `OnFailure` property determines what action will be taken if stack creation fails. This must be one of `DO_NOTHING`, `ROLLBACK`, or `DELETE`.
+
+**Dynamic References** -> SSM and Secrets manager
+- '{{resolve:ssm:parameter-name:version}}'
+- '{{resolve:ssm-secure:parameter-name:version}}'
+
+RDS databases in the template can have the property `ManagedMasterUserPassword: true` which creates admin secret implicitely
+
+**User Data** must be passed with `Fn::Base64`, logs are stored in /var/log/cloud-init-output.log
+
+You can only preview changes with a **change set**
 !["Change Sets"](change-sets.png)
 
 - `Parameter constraints` describe allowed input values so that AWS CloudFormation catches any invalid values before creating a stack. You can set constraints such as a minimum length, maximum length, and allowed patterns.
@@ -343,14 +467,13 @@ AWS Config performs a baseline every six hours to check for new configuration it
 - `!Ref` - Returns the value of the specified parameter or resource.
 - `!Sub` - Substitutes variables in an input string with values that you specify.
 
-The `cfn-init` helper script reads template metadata from the AWS::CloudFormation::Init key and acts accordingly to:
+**cfn-init and cfn-signal**
 
+The `cfn-init` helper script reads template metadata from the `AWS::CloudFormation::Init` key and acts accordingly to:
+- cfn-init log output in `/var/log/cfn-init.log`
 - Fetch and parse metadata from AWS CloudFormation
-
 - Install packages
-
 - Write files to disk
-
 - Enable/disable and start/stop services
 
 The `cfn-signal` helper script signals AWS CloudFormation to indicate whether Amazon EC2 instances have been successfully created or updated. If you install and configure software applications on instances, you can signal AWS CloudFormation when those software applications are ready.
@@ -359,7 +482,7 @@ You can use the wait condition handle to make AWS CloudFormation pause the creat
 
 AWS CloudFormation creates a wait condition just like any other resource. When AWS CloudFormation creates a wait condition, it reports the wait condition’s status as CREATE_IN_PROGRESS and waits until it receives the requisite number of success signals or the wait condition’s timeout period has expired. If AWS CloudFormation receives the requisite number of success signals before the time out period expires, it continues creating the stack; otherwise, it sets the wait condition’s status to CREATE_FAILED and rolls the stack back.
 
-A `cfn-init` script failure is still be followed by the `cfn-signal` script. The **Timeout** property determines how long AWS CloudFormation waits for the requisite number of success signals. Timeout is a minimum-bound property, meaning the timeout occurs no sooner than the time you specify, but can occur shortly thereafter. The maximum time that you can specify is 43200 seconds (12 hours ). The **stack creation can fail** if CloudFormation fails to receive a signal from your EC2 instance if the **Timeout property is set to a low value**.
+A `cfn-init` script failure is still be followed by the `cfn-signal` script. The **Timeout** property determines how long AWS CloudFormation waits for the requisite number of success signals. Timeout is a minimum-bound property, meaning the timeout occurs no sooner than the time you specify, but can occur shortly thereafter. The maximum time that you can specify is 43200 seconds (12 hours). The **stack creation can fail** if CloudFormation fails to receive a signal from your EC2 instance if the **Timeout property is set to a low value**.
 
 **Termination Protection**
 
@@ -375,41 +498,34 @@ If you created an AWS resource outside of AWS CloudFormation management, you can
 
 Performing a **drift detection** operation on a stack determines whether the stack has drifted from its expected template configuration, and returns detailed information about the drift status of each resource in the stack that supports drift detection.
 
-To control how AWS CloudFormation handles the EBS volume when the stack is deleted, set a deletion policy for your volume. You can `delete`, `retain` or create a `snapshot`.
-
-When you create a stack, all update actions are allowed on all resources. By default, anyone with stack update permissions can update all of the resources in the stack. You can prevent stack resources from being unintentionally updated or deleted during a stack update by using a `stack policy`. After you set a stack policy, all of the resources in the stack are protected by default. A **stack policy applies only during stack updates**.
-
-You can use the `OnFailure` property of the CloudFormation CreateStack call for this use-case. The `OnFailure` property determines what action will be taken if stack creation fails. This must be one of `DO_NOTHING`, `ROLLBACK`, or `DELETE`.
-
 **Cross-stack references**
-To create a cross-stack reference, use the `Export output` field to flag the value of a resource output for export. Then, use the `Fn::ImportValue` intrinsic function to import the value.
+To create a cross-stack reference, use the `Outputs` section `Export` field to flag the value of a resource output for export. Then, use the `Fn::ImportValue` intrinsic function to import the value. Stack outputs are displayed on screen when stack is runned from AWS CLI
 
-Stack outputs are displayed on screen when stack is runned from AWS CLI
-
-`UPDATE_ROLLBACK_FAILED`: CloudFormation cannot roll back all changes during an update, solve the issue and **continue update rollback** functionality to reinitiate the rollback and bring the stack to the `UPDATE_ROLLBACK_COMPLETE` state.
+`UPDATE_ROLLBACK_FAILED`: CloudFormation cannot roll back all changes during a stack update, solve the issue and **ContinueUpdateRollback** functionality to reinitiate the rollback and bring the stack to the `UPDATE_ROLLBACK_COMPLETE` state.
 
 The `ROLLBACK_COMPLETE` status indicates the successful removal of one or more stacks after a failed stack creation or after an explicitly canceled stack creation. Any resources that were created during the create stack action are deleted. This status exists only after a failed stack creation. It signifies that all operations from the partially created stack have been appropriately cleaned up. When in this state, only a delete operation can be performed.
 
+**Nested Stacks**
+- You should never update the nested stack, you should update the parent stack with a new template.
+- Same for deletion, you do not delete the nested stack, you delete the parent stack which will also delete all the nested stacks.
+
 **STACK SETS**
-u
+
+Only the **administrator account** can create StackSets
+
 Updating a stack set updates all stack instances. If you have 20 accounts each in two regions, you will have 40 stack instances, and all will be updated when you update the stack set.
 
-Stack sets can be created using either **self-managed permissions** or **service-managed permissions**. With service-managed permissions, you can deploy stack instances to accounts managed by AWS Organizations. Using this permissions model, you don't have to create the necessary IAM roles; StackSets creates the IAM roles on your behalf.
-- You must set up a trust relationship between the administrator (An administrator account is the AWS account in which you create stack sets) and target accounts before creating stacks in target accounts
+Stack sets can be created using either **self-managed permissions** or **service-managed permissions**:
+- **Service-managed permissions**, you can deploy stack instances to accounts managed by `AWS Organizations`. You must **enable all features and trusted access with AWS Organizations**. Using this permissions model, you don't have to create the necessary IAM roles; StackSets creates the IAM roles on your behalf.
+- **Self-managed Permissions**: Requires IAM roles in both administrator and target accounts.You must set up a trust relationship between the administrator (An administrator account is the AWS account in which you create stack sets) and target accounts before creating stacks in target accounts
 
-**Causes of a stack failure:**
+**Stacksets `OUTDATED` troubleshooting:**
 - Insufficient permissions in a target account for creating resources that are specified in your template.
-
 - The AWS CloudFormation template might have errors. Validate the template in AWS CloudFormation and fix errors before trying to create your stack set.
-
 - The template could be trying to create global resources that must be unique but aren't, such as S3 buckets.
-
 - A specified target account number doesn't exist. Check the target account numbers that you specified on the Set deployment options page of the wizard.
-
 - The administrator account does not have a trust relationship with the target account.
-
-- The maximum number of a resource that is specified in your template already exists in your target account. For example, you might have reached the limit of allowed IAM roles in a target account, but the template creates more IAM roles.
-
+- Reached limit or quota in target account for a resource.
 - You have reached the maximum number of stacks that are allowed in a stack set.
 
 ## Service Advisor
@@ -437,6 +553,7 @@ Canaries check the availability and latency of your endpoints and can store load
 You can run a canary once or on a regular schedule. Scheduled canaries can run 24 hours a day, as often as once per minute
 
 **Cloudwatch metrics**
+- CW **custom metrics** allow to **push metrics 2 weeks in the past and 2 hours in the future**
 - The `DiskReadBytes` metric and the `DiskWriteBytes` metrics are associated with the **AWS/EC2 namespace** and report on the read and write performance of attached **instance store volumes**, not EBS volumes.
 - The `VolumeReadBytes` metric and the `VolumeWriteBytes` metric are associated with the **EBS namespace**
 - The **time stamp** can be up to **two weeks in the past** and up to **two hours into the future**
@@ -447,6 +564,8 @@ You can run a canary once or on a regular schedule. Scheduled canaries can run 2
 The only dimension that **Amazon SQS** sends to CloudWatch is `QueueName`. This means that all available statistics are filtered by `QueueName`.
 
 **CloudWatch Agent**: Any configuration files appended to the configuration **must have different file names** from each other and from the initial configuration file. If you use `append-config` with a configuration file with the same file name as a configuration file that the agent is already using, the append command overwrites the information from the first configuration file instead of appending to it. This is true even if the two configuration files with the same file name are on different file paths.
+- `procstat plugin` of cloudwatch agent
+- CWAgent collect interval: 10, 30, 60 seconds
 
 **CW alarms** action can only have the following targets:
 - EC2 action
@@ -497,6 +616,11 @@ You can use **AWS Trusted Advisor’s Service Limit Dashboard** to determine whe
 ## Inspector
 Amazon Inspector is an automated security assessment service that helps you test the network accessibility of your Amazon EC2 instances and the security state of your applications running on the instances.
 
+Security assessment:
+- EC2, leverages SSM agent
+- ECR images
+- Lambda functions
+
 The **Amazon Inspector agent** is an entity that collects installed package information and software configuration for an Amazon EC2 instance
 
 An Amazon Inspector assessment report can be generated for an assessment run once it has been successfully completed. An assessment report is a document that details what is tested in the assessment run, and the results of the assessment. The results of your assessment are formatted into a standard report, which can be generated to share results within your team for remediation actions, to enrich compliance audit data, or to store for future reference.
@@ -506,6 +630,10 @@ You can select from two types of report for your assessment, a **findings report
 - **full report** contains all the information in the findings report and additionally provides the list of rules that were checked and passed on all instances in the assessment target
 
 ## GuardDuty
+- threat discovery
+- anomaly detection in logs: CloudTrail Events Logs, VPC flow logs...
+- Cryptocurrency attacks
+- EventBridge integration
 !["GuardDuty"](guardduty.png)
 
 ## ACM
@@ -536,6 +664,13 @@ Therefore, the best solution is to create a new CMK and import new key material 
 - AWS KMS **automatically rotates AWS managed CMKs** every year (365 days).
 - Automatic key **rotation is disabled by default on customer managed CMKs**. AWS KMS also saves the CMK's older cryptographic material in perpetuity so it can be used to decrypt data that it encrypted. **AWS KMS does not delete any rotated key material until you delete the CMK**.
 ## Organizations
+**Service Control Policies SCP** are applied to OUs or Accounts to restrict users and roles. They **do not apply to the management account**, it has full access power. SCP, you can allow access or deny access, by default everything is denied.
+
+OUs:
+- An OU can contain other OUs up to 5 levels of deep.
+- Each OU can have policies attached.
+- Policies are inherited from parents OUs to children.
+
 User-defined tags are tags that you define, create, and apply to resources. After you have created and applied the user-defined tags, you can activate by using the Billing and Cost Management console for cost allocation tracking. **Cost Allocation Tags** appear on the console after you've enabled Cost Explorer, Budgets, AWS Cost and Usage reports, or legacy reports.
 
 When using AWS Organizations, you must use the **Billing and Cost Management console in the payer account** to mark the tags as cost allocation tags. You can use the **Cost Allocation Tags manager** to do this.
@@ -549,3 +684,17 @@ When using AWS Organizations, you must use the **Billing and Cost Management con
 
 ## WAF
 **rate-based rule**, enter the maximum number of requests to allow in any five-minute period from an IP address that matches the rule's conditions.When an IP address reaches the rate limit threshold, AWS WAF applies the assigned action (block or count) as quickly as possible, usually within 30 seconds. Once the action is in place, if five minutes pass with no requests from the IP address, AWS WAF resets the counter to zero.
+
+## DataSync
+- Datasync is the only option that preserves metadata and file permissions when moving data
+- Datasync is a scheduled task, not real time, can happen daily, weekly etc.
+
+## IAM Access Analyzer
+Find which resources are shared externally
+
+## FSx
+FSx deployment options:
+- Scratch File System: Temporary storage, data is not replicated. Short term processing.
+- Persistent File System. Data replicated within same AZ, long term processing, sensitive data.
+
+`FSx for Windows` can be mounted on Linux instances
