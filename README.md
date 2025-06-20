@@ -33,6 +33,9 @@
 - [DataSync](#datasync)
 - [IAM Access Analyzer](#iam-access-analyzer)
 - [FSx](#fsx)
+- [Service Quotas](#service-quotas)
+- [Health Dashboard](#health-dashboard)
+- [Backup](#backup)
 
 
 ## EC2
@@ -263,6 +266,8 @@ Built-in rotation support for secrets for the following:
 ## RDS
 RDS and Aurora have not SSH available except for RDS Custom.
 
+**Backups**: Perform I/O ops, having `MultiAZ` improve performance.
+
 **Automatic Backups**: Happen during maintenance windows, point in time recovery, 1-35 days, restore to a new DB cluster.
 
 **Aurora DB Cloning**: new DB cluster that uses the **same volume** as the original cluster.
@@ -346,17 +351,17 @@ Redis replication is **asynchronous** (Eventual consistent). Therefore, when a p
 - **Autoscaling shards and replicas** via target tracking and scheduled scaling actions e.g. `CPUUtilization`
 
 **Redis Connection Endpoints**:
-- Cluster mode enabled: 1 configuration endpoint for r/w ops. 1 Node endpoint per node for read ops.
-- Cluster mode disabled: 1 primary endpoint for w ops. 1 Reader endpoint for r ops. 1 Node endpoint per node for read ops
+- **Cluster mode enabled**: 1 configuration endpoint for r/w ops. 1 Node endpoint per node for read ops.
+- **Cluster mode disabled**: 1 primary endpoint for w ops. 1 Reader endpoint for r ops. 1 Node endpoint per node for read ops
 
 **Redis Scaling - Cluster Mode Enabled**:
 - **2 Modes**: `Online Scaling` (No downtime, some degradation in performance) `Offline Scaling` (Downtime, supports changing node type, upgrade engine version) etc
 - **Horizontal**: Resharding (adding/removing shards). Shard rebalancing (redistribute shards). **Supports both Online and Offline Scaling**. Allows you to change the number of node groups (shards) in the replication group by adding or removing node groups (shards). The **online resharding** process **allows scaling in/out while the cluster continues serving incoming requests**
 - **Vertical**: Changing node type, only supports `Online Scaling`
 
-**Memcached**
+**Memcached**:
 - Memcached clusters can have 1-40 nodes.
-- Horizontal scaling: Add/remove nodes, auto-discovery feature
+- Horizontal scaling: Add/remove nodes, auto-discovery feature.
 - Vertical Scaling: Change instance type, creates a new cluster. You must update your application to use the new endpoint and **manually** delete the old cluster.
 
 With Amazon ElastiCache Memcached engine you cannot modify the node type. The way to scale up is to create a new cluster and specify the new node type.
@@ -418,7 +423,14 @@ When you enable `log file integrity validation`, CloudTrail creates a hash for e
 - AWS Lambda function execution activity (the Invoke API).
 
 `AWS CloudTrail` can be used to track the activity of **federated users**. To capture the activity of these federated users, CloudTrail records the following **AWS Security Token Service (AWS STS) API calls**: `AssumeRoleWithWebIdentity` and `AssumeRoleWithSAML`.
+
+**CloudTrail Insights** automatically detects unusual account activity with ML, providing a more efficient way to monitor for potential security threats
+
 ## Config
+AWS Config rules: 
+- AWS managed rules
+- Custom rules
+
 When you add a rule to your account, you can specify when you want AWS Config to run the rule; this is called a trigger. AWS Config evaluates your resource configurations against the rule when the trigger occurs. There are two types of triggers:
 
 - Configuration changes: AWS Config runs evaluations for the rule when certain types of resources are created, changed, or deleted.
@@ -431,6 +443,19 @@ When you add a rule to your account, you can specify when you want AWS Config to
 Amazon EC2 deletes the Amazon EBS volume that has the `DeleteOnTermination` attribute set to true, but it does not publish the `DeleteVolume` API call. This is because AWS Config uses the `DeleteVolume` API call as a trigger with the rule, and the resource changes aren't recorded for the EBS volume. The EBS volume still shows as compliant or noncompliant.
 
 AWS Config performs a baseline every six hours to check for new configuration items with the `ResourceDeleted` status. The AWS Config rule then removes the deleted EBS volumes from the evaluation results.
+
+**Organizations Trails**
+
+A trail that will log all events for all AWS accounts in an AWS Organization. Stores all the logs centralized in a single s3 bucket, each account in a separate folder. Member accounts cannot remove or modify, **just view**
+
+**AWS Config Aggregators**
+- You set it up in a single centralized account and you have an aggregated view of compliant & non-compliant resources accross all acounts
+- You need to create an authorization in each source account to allow the centralized account to collect data
+- Rules are created in each individual source account
+- Use StackSets to effectively deploy rules to multiple source accounts.
+
+If using `AWS Organizations` you create the aggregator in the management account and no need individual Authorization in all member accounts.
+
 ## Cloudformation
 `Service Role` -> A user without permissions for aws services is able to create these services with Cloudformation, the user needs `iam:PassRole` policy, and the service role policy can be e.g. `s3:*Bucket`. This will allow the user to create buckets with Cloudformation. If not specified, Cloudformation will use the user permissions.
 
@@ -611,7 +636,9 @@ AWS OpsWorks is a configuration management service that provides managed instanc
 ## Trusted Advisor
 AWS Trusted Advisor is an online tool that provides you real-time guidance to help you provision your resources following AWS best practices.
 
-You can use **AWS Trusted Advisor’s Service Limit Dashboard** to determine whether the service limits for EC2 instances have been reached
+You can use **AWS Trusted Advisor’s Service Limit Dashboard** to determine whether the service limits for EC2 instances have been reached.
+
+Trusted Advisor publishes its check results to CW.
 
 ## Inspector
 Amazon Inspector is an automated security assessment service that helps you test the network accessibility of your Amazon EC2 instances and the security state of your applications running on the instances.
@@ -631,8 +658,8 @@ You can select from two types of report for your assessment, a **findings report
 
 ## GuardDuty
 - threat discovery
-- anomaly detection in logs: CloudTrail Events Logs, VPC flow logs...
-- Cryptocurrency attacks
+- anomaly detection in logs: CloudTrail Events Logs, VPC flow logs, DNS logs...
+- **Cryptocurrency attacks**
 - EventBridge integration
 !["GuardDuty"](guardduty.png)
 
@@ -644,11 +671,16 @@ You can select from two types of report for your assessment, a **findings report
   - The ACM certificate wasn't requested in the same AWS Region as your load balancer or CloudFront distribution.
 
 ## Service Catalog
+Sharing Catalogs options:
+- Share a reference of the portfolio, then import the shared portfolio in the recipient account (stays in-sync with original portfolio)
+- Deploy a copy of the portfolio into the recipient account (not in sync)
 You can share portfolios in several ways, including **account-to-account sharing**, **organizational sharing**, and deploying catalogs using stack sets (creates independent copies).
 
 The products and constraints in the imported portfolio stay in **sync** with changes that you make to the shared portfolio, the original portfolio that you shared. **The recipient cannot change the products or constraints, but can add AWS Identity and Access Management (IAM) access for end users**.
 
 A recipient administrator can add imported products to local portfolios. The products will stay in sync with the shared portfolio. However, the recipient administrator cannot upload or add products to the imported portfolio or remove products from the imported portfolio.
+
+`Tag Options library`: tag products and share them based on tag.
 
 ## SSO
 **Permission sets** define the level of access that users and groups have to an AWS account. Permission sets are stored in AWS SSO and provisioned to the AWS account as IAM roles.
@@ -676,6 +708,16 @@ User-defined tags are tags that you define, create, and apply to resources. Afte
 When using AWS Organizations, you must use the **Billing and Cost Management console in the payer account** to mark the tags as cost allocation tags. You can use the **Cost Allocation Tags manager** to do this.
 
 `AWS Health Organizational View` enables you to aggregate AWS Health events from all accounts in your organization in one place.
+
+**AWS Organizations reserved instances sharing**: All accounts in the Organization can receive the hourly cost benefit of reserved instances purchased by any other account. The payer account (master account) of an Organization can turn off Reserve Instance discount and Savings Plans discount sharing for any accounts in the ORG, including the payer account.
+
+AWS Organizations - **Tag policies**:
+- Prevent non-compliant tagging operations
+- Generate report that lists all tagged/non-compliance resources
+- You can setup EventBridge rule to monitor noncompliant tags
+
+In s3bucket policy `condition key` aws:PrincipalOrgID makes it accessible to IAM principals in the organization.
+
 ## Route 53
 **Health checks**
 - No minimum length for the search string
@@ -686,6 +728,8 @@ When using AWS Organizations, you must use the **Billing and Cost Management con
 **rate-based rule**, enter the maximum number of requests to allow in any five-minute period from an IP address that matches the rule's conditions.When an IP address reaches the rate limit threshold, AWS WAF applies the assigned action (block or count) as quickly as possible, usually within 30 seconds. Once the action is in place, if five minutes pass with no requests from the IP address, AWS WAF resets the counter to zero.
 
 ## DataSync
+Datasync can synchronize to: **S3, EFS and FSx**
+
 - Datasync is the only option that preserves metadata and file permissions when moving data
 - Datasync is a scheduled task, not real time, can happen daily, weekly etc.
 
@@ -698,3 +742,20 @@ FSx deployment options:
 - Persistent File System. Data replicated within same AZ, long term processing, sensitive data.
 
 `FSx for Windows` can be mounted on Linux instances
+
+## Service Quotas
+You can create a CW alarm on the Service Quotas console to notify when you're close to a service quota value threshold e.g. Lambda concurrent executions.
+
+Trusted Advisor has a limited number of Service Limits checks ~50 (Service Quotas is preferred) and also has integration with CW alarms.
+
+## Health Dashboard
+Integration with `EventBridge` for event notifications both for public aws events and for resources affected in your account.
+
+## Backup
+AWS Backup, centralize management of buckups:
+- Supports PITR for supported services e.g. Aurora
+- On-Demand and scheduled backups
+- Tag-based backup policies
+- You create buckup policies known as backup plans, you specify backup frequency, backup window, transition to cold storage, retention period
+
+**Backup Vault Lock policy**: Even the root user cannot delete backups when enabled.
